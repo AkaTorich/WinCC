@@ -1,0 +1,385 @@
+# Рисование: GDI и GDI+
+В Windows два способа рисовать на Си. GDI — старый и простой: линии, прямоугольники, текст, картинки, всё в целых точках и без сглаживания. GDI+ — следующий шаг: сглаженные края, полупрозрачность, градиенты, повороты, текст ClearType, загрузка и сохранение PNG и JPEG. Оба встроены в Windows, и оба доступны программе WinCC без единой лишней строки. Эта глава начинает с GDI — без него не обходится ни одно окно, — потом переходит к GDI+ через `gdiplus.h` и заканчивает калькулятором из примеров, который нарисован целиком на GDI+.
+
+## Холст, перья и кисти
+
+Всё рисование GDI идёт через холст — контекст устройства, описатель `HDC`. Холст знает, куда рисовать (окно, картинка в памяти, принтер), и держит текущие инструменты: перо для линий, кисть для заливки, шрифт для текста. Функция рисования берёт то, что выбрано в холсте сейчас: `Ellipse` обводит фигуру текущим пером и заливает текущей кистью.
+
+В окне холст дают `BeginPaint` в ответ на `WM_PAINT` (глава 9). Вне `WM_PAINT` его можно взять `GetDC(hwnd)` и обязательно вернуть `ReleaseDC`, но рисовать так стоит только для замеров: при следующей перерисовке нарисованное пропадёт.
+
+Инструменты создают, выбирают в холст, а после работы удаляют. Здесь главное правило GDI:
+
+1. Создать инструмент: `CreatePen`, `CreateSolidBrush`, `CreateFontA`.
+2. Выбрать его в холст: `SelectObject` возвращает инструмент, который был выбран раньше, — его надо запомнить.
+3. Рисовать.
+4. Вернуть в холст прежний инструмент тем же `SelectObject`.
+5. Удалить свой инструмент `DeleteObject`.
+
+Удалять инструмент, пока он выбран в холсте, нельзя, а не удалять — значит терять память: у процесса есть предел в десять тысяч объектов GDI, и программа, которая в каждом `WM_PAINT` создаёт кисть и забывает её удалить, через несколько минут перестаёт рисовать. Готовые инструменты Windows, которые даёт `GetStockObject` (`WHITE_BRUSH`, `BLACK_PEN`, `NULL_PEN` — «без обводки», `DEFAULT_GUI_FONT`), не удаляют.
+
+Цвет в GDI — число `COLORREF`, которое собирает макрос `RGB(красный, зелёный, синий)`, каждая часть от 0 до 255.
+
+:= Что рисовать | Функции
+: линии | `MoveToEx` и `LineTo`, `Polyline` — ломаная по массиву точек, `PolyBezier` — кривые
+: фигуры | `Rectangle`, `RoundRect`, `Ellipse`, `Polygon`, `Pie`, `Chord`
+: заливка без обводки | `FillRect` с кистью, `FillRgn` для области
+: текст | `TextOutA`, `DrawTextA` — в прямоугольнике, с выравниванием и переносом, `ExtTextOutA`
+: размер текста | `GetTextExtentPoint32A`, `DrawTextA` с флагом `DT_CALCRECT`
+: картинки | `BitBlt` — перенос с холста на холст, `StretchBlt` — с растяжкой
+
+Перо задают видом линии (`PS_SOLID`, `PS_DASH`, `PS_DOT`), толщиной и цветом; кисть — цветом или штриховкой (`CreateHatchBrush`). У текста свои настройки холста: `SetTextColor` — цвет букв, `SetBkMode(dc, TRANSPARENT)` — не закрашивать фон под буквами (иначе каждое слово окажется на белой плашке).
+
+Шрифт создаёт `CreateFontA`. Из её четырнадцати параметров важны немногие: первый — высота (отрицательное число означает высоту самих букв в точках, без межстрочного зазора), пятый — жирность (`FW_NORMAL`, `FW_SEMIBOLD`, `FW_BOLD`), двенадцатый — качество (`CLEARTYPE_QUALITY` даёт гладкие буквы), последний — имя шрифта, например `"Segoe UI"`. Остальные можно оставить нулями.
+
+Текст в `TextOutA`, `DrawTextA` и других функциях текста GDI идёт в UTF-8, и кириллица рисуется правильно. Это заслуга библиотеки WinCC: GDI читает A-строки в кодировке системы, а не программы, поэтому `windows.h` направляет эти функции через переходники, которые отдают GDI тот же текст в UTF-16 (глава 7, приложение В).
+
+## Рисование без мерцания
+
+Окно, которое перерисовывается часто — при растяжке, по таймеру, за мышью, — на GDI мерцает. Причина в порядке работы: Windows сначала стирает окно фоном класса (`WM_ERASEBKGND`), потом программа рисует по фигуре, и между этими шагами глаз успевает увидеть пустое окно и полуготовую картинку.
+
+Лечится это двумя ходами. Первый — ответить на `WM_ERASEBKGND` единицей: «фон я закрашу сам». Второй — рисовать не в окно, а в картинку в памяти, и выводить её в окно одним `BitBlt`. Картинку в памяти дают `CreateCompatibleDC` (холст без устройства) и `CreateCompatibleBitmap` (картинка размером с окно), выбранная в этот холст. Пример ниже делает и то, и другое: строит график синуса с сеткой и подписью.
+
+```
+// График синуса средствами GDI: сетка, кривая, подписи; рисование в памяти без мерцания
+#include <windows.h>
+#include <math.h>
+#include <stdio.h>
+
+static void draw(HDC dc, int w, int h)
+{
+    RECT all = { 0, 0, w, h };
+    FillRect(dc, &all, (HBRUSH)GetStockObject(WHITE_BRUSH));
+
+    int left = 50, top = 20, right = w - 20, bottom = h - 40;
+    int mid = (top + bottom) / 2;
+
+    HPEN grid = CreatePen(PS_DOT, 1, RGB(190, 200, 215));      // сетка — точками
+    HGDIOBJ old_pen = SelectObject(dc, grid);
+    for (int i = 0; i <= 8; i++) {
+        int x = left + (right - left) * i / 8;
+        MoveToEx(dc, x, top, NULL);
+        LineTo(dc, x, bottom);
+    }
+    for (int i = 0; i <= 4; i++) {
+        int y = top + (bottom - top) * i / 4;
+        MoveToEx(dc, left, y, NULL);
+        LineTo(dc, right, y);
+    }
+
+    HPEN curve = CreatePen(PS_SOLID, 3, RGB(200, 60, 40));     // кривая — толстой линией
+    SelectObject(dc, curve);
+    POINT pts[200];
+    for (int i = 0; i < 200; i++) {
+        double t = i / 199.0;
+        pts[i].x = left + (LONG)(t * (right - left));
+        pts[i].y = mid - (LONG)(sin(t * 4 * 3.14159265) * (bottom - top) / 2 * 0.9);
+    }
+    Polyline(dc, pts, 200);
+    SelectObject(dc, old_pen);                                  // вернуть старое перо
+    DeleteObject(grid);                                         // и только потом удалять свои
+    DeleteObject(curve);
+
+    HFONT font = CreateFontA(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
+                             CLEARTYPE_QUALITY, 0, "Segoe UI");
+    HGDIOBJ old_font = SelectObject(dc, font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(60, 70, 90));
+    TextOutA(dc, left, bottom + 10, "y = sin x, от 0 до 4π", lstrlenA("y = sin x, от 0 до 4π"));
+    SelectObject(dc, old_font);
+    DeleteObject(font);
+}
+
+static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;                                  // фон закрасит draw(): не стирать зря
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT r;
+        GetClientRect(hwnd, &r);
+        HDC mem = CreateCompatibleDC(dc);          // картинка в памяти
+        HBITMAP bmp = CreateCompatibleBitmap(dc, r.right, r.bottom);
+        HGDIOBJ old = SelectObject(mem, bmp);
+        draw(mem, r.right, r.bottom);
+        BitBlt(dc, 0, 0, r.right, r.bottom, mem, 0, 0, SRCCOPY);   // на экран одним куском
+        SelectObject(mem, old);
+        DeleteObject(bmp);
+        DeleteDC(mem);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcA(hwnd, msg, wp, lp);
+}
+
+int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
+{
+    WNDCLASSA wc = { 0 };
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = wnd_proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    wc.lpszClassName = "SineGraph";
+    RegisterClassA(&wc);
+    HWND hwnd = CreateWindowExA(0, "SineGraph", "График на GDI", WS_OVERLAPPEDWINDOW,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 520, 320, NULL, NULL, inst, NULL);
+    ShowWindow(hwnd, show);
+    MSG msg;
+    while (GetMessageA(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    return (int)msg.wParam;
+}
+```
+
+@ 12-график-gdi.png | График на GDI: сетка пером PS_DOT, кривая — Polyline, подпись — TextOutA
+
+Функция `draw` не знает, куда рисует, — она получает холст и размер. Это удобно: тот же код нарисует картинку в памяти, на принтере или в файле. А на рисунке видно, где кончаются возможности GDI: кривая толщиной в три точки получилась ступенчатой. GDI не сглаживает края фигур и не умеет полупрозрачности. Для этого есть GDI+.
+
+## GDI+ в программе на Си
+
+GDI+ — библиотека рисования, которая есть в каждой Windows начиная с XP (`gdiplus.dll`). Для C++ Microsoft оформила её классами, а под классами лежат обычные функции Си, «плоский» GDI+. Их и объявляет `gdiplus.h` WinCC: 183 функции, константы и структуры. Строка `#pragma comment(lib, "gdiplus")` уже стоит в заголовке, так что подключение — одна строка `#include <gdiplus.h>`.
+
+Порядок работы с GDI+ такой.
+
+- Один раз в начале программы — `GdiplusStartup`, один раз в конце — `GdiplusShutdown`. Без запуска все функции вернут ошибку `GdiplusNotInitialized`.
+- Каждая функция возвращает `GpStatus`: `Ok` (ноль) или номер ошибки — `InvalidParameter`, `FileNotFound`, `OutOfMemory` и другие из начала заголовка. Результат функции возвращается через последний параметр-указатель.
+- Объекты — графика, кисти, перья, контуры, шрифты, картинки — это указатели. Их создают функции `GdipCreate…` и уничтожают парные `GdipDelete…`; картинки — `GdipDisposeImage`. Любая кисть годится там, где ждут `GpBrush`: сплошная, градиентная или штриховая.
+- Координаты — числа с плавающей точкой (`REAL`, то есть `float`); у многих функций есть вариант с буквой `I` на конце для целых.
+- Весь текст и все имена файлов — UTF-16: `L"…"` или строка, переведённая из UTF-8 через `MultiByteToWideChar`.
+
+Где рисовать, говорит объект графики `GpGraphics`. `GdipCreateFromHDC` делает его поверх холста GDI — так GDI+ рисует в окне; `GdipGetImageGraphicsContext` — поверх картинки GDI+ в памяти, которую потом можно сохранить в файл. Сразу после создания графике задают качество:
+
+:= Настройка | Значение | Что даёт
+: `GdipSetSmoothingMode` | `SmoothingModeAntiAlias` | сглаженные края фигур и линий
+: `GdipSetPixelOffsetMode` | `PixelOffsetModeHalf` | точные полуточки: тонкие линии без размытия
+: `GdipSetTextRenderingHint` | `TextRenderingHintClearTypeGridFit` | текст ClearType — для рисования в окне
+: `GdipSetTextRenderingHint` | `TextRenderingHintAntiAliasGridFit` | сглаженный текст — для картинок в файл
+: `GdipSetInterpolationMode` | `InterpolationModeHighQualityBicubic` | качественное уменьшение и увеличение картинок
+
+! Цвет в GDI+ записан иначе, чем в GDI: `0xAARRGGBB`, где `AA` — непрозрачность (`FF` — сплошной, `80` — наполовину прозрачный, `00` — невидимый). Его собирают `MakeARGB(a, r, g, b)` и `MakeRGB(r, g, b)` из `gdiplus.h`. Макрос `RGB` из GDI здесь не годится: `RGB(255, 0, 0)` в GDI+ — это не красный, а полностью прозрачный синий.
+
+## Кисти, перья, контуры и текст
+
+Сплошную кисть создаёт `GdipCreateSolidFill(цвет, &кисть)`. Градиент между двумя цветами по прямоугольнику — `GdipCreateLineBrushFromRect`, с направлением `LinearGradientModeVertical`, `…Horizontal` или по диагонали; несколько цветов вдоль градиента задаёт `GdipSetLinePresetBlend`. Градиент от центра к краям фигуры — `GdipCreatePathGradient`, штриховку — `GdipCreateHatchBrush`, заливку картинкой — `GdipCreateTexture`.
+
+Перо создаёт `GdipCreatePen1(цвет, толщина, UnitPixel, &перо)`; пунктир ему даёт `GdipSetPenDashStyle`, скруглённые концы — `GdipSetPenStartCap` и `GdipSetPenEndCap` с `LineCapRound`, скруглённые изломы — `GdipSetPenLineJoin`.
+
+Фигуры рисуют парами функций: `GdipDraw…` обводит пером, `GdipFill…` заливает кистью — прямоугольник, эллипс, сектор, многоугольник, кривую через точки. Фигуру любой формы собирают в контур — `GpPath` — из линий, дуг и кривых, а потом обводят или заливают целиком. Так делается прямоугольник со скруглёнными углами, которого в GDI+ нет готового: четыре дуги по углам, соединённые сами собой.
+
+```
+static void round_rect(GpPath *p, float x, float y, float w, float h, float r)
+{
+    float d = 2 * r;                                       // углы — четверти круга диаметром d
+    GdipResetPath(p);
+    GdipAddPathArc(p, x, y, d, d, 180, 90);
+    GdipAddPathArc(p, x + w - d, y, d, d, 270, 90);
+    GdipAddPathArc(p, x + w - d, y + h - d, d, d, 0, 90);
+    GdipAddPathArc(p, x, y + h - d, d, d, 90, 90);
+    GdipClosePathFigure(p);
+}
+```
+
+Текст рисуют три объекта: семейство шрифта (`GdipCreateFontFamilyFromName(L"Segoe UI", NULL, &семейство)`), шрифт нужного размера и начертания (`GdipCreateFont` с `FontStyleRegular`, `FontStyleBold`, `FontStyleItalic` и размером в `UnitPixel`) и формат строки — выравнивание по горизонтали и вертикали (`GdipSetStringFormatAlign`, `GdipSetStringFormatLineAlign`), перенос, многоточие на обрезке. `GdipDrawString` пишет текст в прямоугольник, `GdipMeasureString` измеряет его заранее.
+
+Повороты, сдвиги и масштаб действуют на всё, что рисуется после них: `GdipTranslateWorldTransform`, `GdipRotateWorldTransform`, `GdipScaleWorldTransform`. Чтобы повернуть одну фигуру и вернуть всё как было, состояние сохраняют `GdipSaveGraphics` и восстанавливают `GdipRestoreGraphics`.
+
+## Картинка в файл
+
+GDI+ умеет рисовать не только в окно, но и в картинку в памяти, а картинку — сохранять в файл. Пример — консольная программа, которая рисует кольцевую диаграмму суток с подписями и сохраняет её в PNG. Окно ей не нужно вовсе.
+
+```
+// Кольцевая диаграмма «Сутки» средствами GDI+ — рисуется в память и сохраняется в PNG
+#include <windows.h>
+#include <gdiplus.h>
+#include <stdio.h>
+
+typedef struct { const WCHAR *name; float hours; ARGB color; } Part;
+
+static const Part parts[] = {
+    { L"Сон", 8, 0xFF4C6EF5 },
+    { L"Работа", 8, 0xFFF59F00 },
+    { L"Дорога", 2, 0xFF868E96 },
+    { L"Еда", 2, 0xFF40C057 },
+    { L"Своё время", 4, 0xFFE64980 },
+};
+enum { COUNT = sizeof(parts) / sizeof(parts[0]), W = 640, H = 360, SCALE = 2 };
+
+int main(void)
+{
+    ULONG_PTR token;
+    GdiplusStartupInput in = { 1 };
+    if (GdiplusStartup(&token, &in, NULL) != Ok) {
+        printf("GDI+ не запустился\n");
+        return 1;
+    }
+
+    GpBitmap *bmp;                                         // картинка вдвое крупнее — для печати
+    GdipCreateBitmapFromScan0(W * SCALE, H * SCALE, 0, PixelFormat32bppARGB, NULL, &bmp);
+    GpGraphics *g;
+    GdipGetImageGraphicsContext(bmp, &g);
+    GdipScaleWorldTransform(g, SCALE, SCALE, MatrixOrderPrepend);   // дальше — в точках 640 x 360
+    GdipSetSmoothingMode(g, SmoothingModeAntiAlias);
+    GdipSetTextRenderingHint(g, TextRenderingHintAntiAliasGridFit);
+
+    // фон: градиент сверху вниз
+    RectF all = { 0, 0, W, H };
+    GpLineGradient *bg;
+    GdipCreateLineBrushFromRect(&all, 0xFFF8F9FB, 0xFFE3E8F0, LinearGradientModeVertical, WrapModeTileFlipXY, &bg);
+    GdipFillRectangle(g, bg, 0, 0, W, H);
+    GdipDeleteBrush(bg);
+
+    // кольцо: секторы, а в середине — круг цвета фона
+    float start = -90, total = 0;
+    for (int i = 0; i < COUNT; i++) total += parts[i].hours;
+    GpPen *gap;                                            // белые швы между секторами
+    GdipCreatePen1(0xFFFFFFFF, 3, UnitPixel, &gap);
+    for (int i = 0; i < COUNT; i++) {
+        float sweep = parts[i].hours / total * 360;
+        GpSolidFill *b;
+        GdipCreateSolidFill(parts[i].color, &b);
+        GdipFillPie(g, b, 40, 40, 280, 280, start, sweep);
+        GdipDrawPie(g, gap, 40, 40, 280, 280, start, sweep);
+        GdipDeleteBrush(b);
+        start += sweep;
+    }
+    GpSolidFill *hole;
+    GdipCreateSolidFill(0xFFEEF1F6, &hole);
+    GdipFillEllipse(g, hole, 110, 110, 140, 140);
+    GdipDrawEllipse(g, gap, 110, 110, 140, 140);
+    GdipDeleteBrush(hole);
+    GdipDeletePen(gap);
+
+    // подписи
+    GpFontFamily *family;
+    GdipCreateFontFamilyFromName(L"Segoe UI", NULL, &family);
+    GpFont *big, *small;
+    GdipCreateFont(family, 30, FontStyleBold, UnitPixel, &big);
+    GdipCreateFont(family, 17, FontStyleRegular, UnitPixel, &small);
+    GpStringFormat *center;
+    GdipCreateStringFormat(0, 0, &center);
+    GdipSetStringFormatAlign(center, StringAlignmentCenter);
+    GdipSetStringFormatLineAlign(center, StringAlignmentCenter);
+    GpSolidFill *ink;
+    GdipCreateSolidFill(0xFF343A40, &ink);
+
+    RectF mid = { 110, 110, 140, 140 };
+    GdipDrawString(g, L"24 ч", -1, big, &mid, center, ink);
+
+    for (int i = 0; i < COUNT; i++) {
+        float y = 75 + i * 44;
+        GpSolidFill *b;
+        GdipCreateSolidFill(parts[i].color, &b);
+        GdipFillEllipse(g, b, 370, y + 4, 18, 18);
+        GdipDeleteBrush(b);
+        WCHAR line[64];
+        swprintf(line, 64, L"%ls — %.0f ч", parts[i].name, parts[i].hours);
+        RectF r = { 400, y, 230, 26 };
+        GdipDrawString(g, line, -1, small, &r, NULL, ink);
+    }
+
+    GpStatus st = GdipSaveImageToFile(bmp, L"сутки.png", &GdipEncoderPng, NULL);
+    if (st == Ok)
+        printf("Сохранено: сутки.png, %d x %d точек\n", W * SCALE, H * SCALE);
+    else
+        printf("Не сохранить: код %d\n", st);
+
+    GdipDeleteBrush(ink);
+    GdipDeleteStringFormat(center);
+    GdipDeleteFont(big);
+    GdipDeleteFont(small);
+    GdipDeleteFontFamily(family);
+    GdipDeleteGraphics(g);
+    GdipDisposeImage(bmp);
+    GdiplusShutdown(token);
+    return st == Ok ? 0 : 1;
+}
+```
+
+```
+> wcc сутки.c
+Готово: сутки.exe — консольная программа, 78336 байт, 172 мс
+> сутки
+Сохранено: сутки.png, 1280 x 720 точек
+```
+
+@ 12-сутки.png | Картинка, которую нарисовала и сохранила в PNG сама программа: градиент, сглаженные секторы, текст
+
+Рисунок выше — не снимок экрана, а тот самый файл `сутки.png`. Несколько мест программы стоит отметить.
+
+`GdipCreateBitmapFromScan0` с пустым указателем на точки создаёт чистую картинку нужного размера и формата; `PixelFormat32bppARGB` — по четыре байта на точку, с прозрачностью. Картинка сделана вдвое больше задуманной, а `GdipScaleWorldTransform` с множителем 2 позволяет рисовать в привычных точках 640 на 360: всё увеличится само, и картинка останется чёткой в печати.
+
+Кольцо — это круг из секторов `GdipFillPie` (углы в градусах, отсчёт от направления «вправо» по часовой стрелке, поэтому начало −90 — это «вверх») и круг цвета фона в середине. Белые швы рисует перо поверх каждого сектора.
+
+Сохраняет картинку `GdipSaveImageToFile`: имя файла в UTF-16, а формат задаёт кодировщик. В `gdiplus.h` WinCC готовы все пять: `GdipEncoderPng`, `GdipEncoderJpeg`, `GdipEncoderBmp`, `GdipEncoderGif` и `GdipEncoderTiff`, — искать их по списку, как приходится в примерах для C++, не нужно.
+
+Обратная дорога так же коротка. `GdipLoadImageFromFile(L"фото.jpg", &картинка)` читает PNG, JPEG, BMP, GIF, TIFF и значки, `GdipGetImageWidth` и `GdipGetImageHeight` сообщают размер, `GdipDrawImageRect` рисует картинку в заданный прямоугольник — с растяжкой или сжатием. Отдельные точки читает и пишет `GdipBitmapGetPixel` и `GdipBitmapSetPixel`, а для быстрой работы со всеми точками сразу есть `GdipBitmapLockBits`. Картинку можно превратить в значок окна — `GdipCreateHICONFromBitmap`; так калькулятор рисует себе значок сам.
+
+## GDI+ в окне
+
+В окне GDI+ рисует поверх холста GDI, и мерцание лечится тем же способом: рисовать в картинку в памяти и выводить её одним `BitBlt`. Каркас `WM_PAINT` для GDI+ выглядит так — рисование сосредоточено в своей функции, а этот кусок не меняется от программы к программе:
+
+```
+static void paint(HWND hwnd)
+{
+    PAINTSTRUCT ps;
+    HDC dc = BeginPaint(hwnd, &ps);
+    RECT r;
+    GetClientRect(hwnd, &r);
+    HDC mem = CreateCompatibleDC(dc);
+    HBITMAP bmp = CreateCompatibleBitmap(dc, r.right, r.bottom);
+    HGDIOBJ old = SelectObject(mem, bmp);
+
+    GpGraphics *g;
+    GdipCreateFromHDC(mem, &g);                            // GDI+ рисует в картинку в памяти
+    GdipSetSmoothingMode(g, SmoothingModeAntiAlias);
+    GdipSetPixelOffsetMode(g, PixelOffsetModeHalf);
+    GdipSetTextRenderingHint(g, TextRenderingHintClearTypeGridFit);
+    GdipGraphicsClear(g, 0xFFF4F6FA);
+    draw(g, (float)r.right, (float)r.bottom);              // всё рисование программы
+    GdipDeleteGraphics(g);
+
+    BitBlt(dc, 0, 0, r.right, r.bottom, mem, 0, 0, SRCCOPY);
+    SelectObject(mem, old);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+    EndPaint(hwnd, &ps);
+}
+```
+
+К нему — `return 1` на `WM_ERASEBKGND`, `GdiplusStartup` в начале `WinMain` до создания окна и `GdiplusShutdown` после цикла сообщений. Объект графики создаётся заново в каждом `WM_PAINT` и удаляется в нём же: держать его между перерисовками нельзя, потому что холст под ним живёт только до `EndPaint`. А вот шрифты, семейства и форматы строк, которые не меняются, удобно создать один раз при запуске — так быстрее.
+
+## Калькулятор как образец
+
+В `examples\calc` лежит калькулятор, нарисованный целиком на GDI+: ни одной кнопки Windows, всё — сглаженные фигуры, градиенты и текст ClearType. Это хороший образец, как устроить программу побольше учебной.
+
+```
+> cd examples\calc
+> wcc main.c engine.c draw.c -o Калькулятор.exe
+Готово: Калькулятор.exe — оконная программа, 237056 байт, 406 мс
+```
+
+@ 12-калькулятор.png | Калькулятор из примеров WinCC: всё нарисовано через GDI+ — кнопки, табло, журнал
+
+Программа разделена на три файла по смыслу, и каждый можно читать отдельно.
+
+:= Файл | Что в нём
+: `engine.c` | счёт: приоритет действий, проценты, вид чисел на табло; ни слова о Windows
+: `draw.c` | расстановка кнопок по размеру окна и всё рисование GDI+, значок окна
+: `main.c` | окно, мышь, клавиатура, таймер плавной подсветки, буфер обмена, масштаб экрана
+
+Из того, что разобрано в главах этой части, в калькуляторе работает почти всё. `paint` в `draw.c` — тот же каркас с картинкой в памяти, что выше. Скруглённые кнопки — функция `round_rect` из этой главы и градиентная кисть. Плавная подсветка под мышью — таймер раз в 15 миллисекунд, который понемногу сдвигает яркость и просит перерисовку, пока подсветка не догонит мышь. Значок окна рисуется при запуске в картинку нужного размера и превращается в `HICON`; при смене масштаба экрана рисуется заново, поэтому он всегда чёткий. Чёткость всего окна на любом масштабе даёт `SetProcessDpiAwarenessContext`, взятая через `GetProcAddress`, а тёмный заголовок — `DwmSetWindowAttribute` из `dwmapi.dll` (глава 11).
+
+Ключ `--демо=12+3*4=` заставляет калькулятор самого нажать эти кнопки по таймеру — так сделан снимок выше. Получилось 24, а не 60: действия выполняются по старшинству, как на бумаге.
+
+## Итог
+
+GDI рисует через холст `HDC` текущими инструментами: перья, кисти и шрифты создают, выбирают `SelectObject`, возвращают прежние и удаляют. Он прост и быстр, но без сглаживания и прозрачности. Мерцание лечат картинкой в памяти и `BitBlt` и ответом 1 на `WM_ERASEBKGND`. Текст функций GDI в программах WinCC — в UTF-8.
+
+GDI+ подключается одной строкой `#include <gdiplus.h>`: запуск `GdiplusStartup`, объект графики поверх холста или картинки, сглаживание, цвета `0xAARRGGBB` с прозрачностью, градиенты, контуры, текст в UTF-16, картинки из файлов и в файлы через готовые кодировщики. Каждая функция возвращает `Ok` или номер ошибки, каждый созданный объект удаляется своей парной функцией. Калькулятор из примеров показывает всё это в работе.

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>7.3</LangVersion>
+    <Version>1.2.0</Version>
+    <AssemblyName>WinCC</AssemblyName>
+    <RootNamespace>WinCC</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\</OutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>none</DebugType>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="icon.ico" />
+    <Compile Remove="tools\**" />
+    <None Remove="tools\**" />
+  </ItemGroup>
+  <!-- Библиотека тем вшивается исходниками: все её темы на борту, программа остаётся одним exe -->
+  <Import Project="..\..\Libraries\ThemeLibrary\ThemeLibrary.Source.props" />
+  <!-- Готовый WinCC.exe кладётся в корень WinCC\, рядом с wcc.exe -->
+  <Target Name="CopyExeToRoot" AfterTargets="Build">
+    <Copy SourceFiles="$(OutDir)WinCC.exe" DestinationFolder="$(MSBuildProjectDirectory)\.." />
+  </Target>
+</Project>

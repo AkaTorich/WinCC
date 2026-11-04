@@ -1,0 +1,38 @@
+// The sizes and a few offsets of the structures of windows.h: built by MSVC with the
+// real headers and by WinCC with its own, the two lists must be the same (abi.ps1).
+#include <windows.h>
+#include <commctrl.h>
+#include <stdio.h>
+#include <stddef.h>
+
+#define S(t) printf("%-28s %4d\n", #t, (int)sizeof(t))
+#define O(t, m) printf("%-28s %4d\n", #t "." #m, (int)offsetof(t, m))
+
+int main(void)
+{
+    S(POINT); S(SIZE); S(RECT); S(FILETIME); S(SYSTEMTIME); S(LARGE_INTEGER); S(SECURITY_ATTRIBUTES);
+    S(OVERLAPPED); S(MSG); O(MSG, time); O(MSG, pt);
+    S(WNDCLASSA); S(WNDCLASSW); S(WNDCLASSEXA); S(WNDCLASSEXW); O(WNDCLASSEXW, hInstance); O(WNDCLASSEXW, hIconSm);
+    S(PAINTSTRUCT); O(PAINTSTRUCT, rcPaint); S(CREATESTRUCTA); S(CREATESTRUCTW); O(CREATESTRUCTW, style);
+    S(MINMAXINFO); S(WINDOWPOS); S(WINDOWPLACEMENT); S(SCROLLINFO); S(NMHDR); S(DRAWITEMSTRUCT);
+    S(TRACKMOUSEEVENT); S(MONITORINFO); S(ACCEL);
+    S(LOGFONTA); S(LOGFONTW); S(TEXTMETRICA); S(TEXTMETRICW); O(TEXTMETRICW, tmItalic); S(LOGBRUSH); S(LOGPEN);
+    S(BITMAP); S(RGBQUAD); S(BITMAPINFOHEADER); S(BITMAPINFO); S(BITMAPFILEHEADER); O(BITMAPFILEHEADER, bfOffBits);
+    S(BLENDFUNCTION);
+    S(PROCESS_INFORMATION); S(STARTUPINFOA); S(STARTUPINFOW); O(STARTUPINFOW, hStdInput);
+    S(WIN32_FIND_DATAA); S(WIN32_FIND_DATAW); O(WIN32_FIND_DATAW, cAlternateFileName);
+    S(CRITICAL_SECTION); S(MEMORYSTATUSEX); S(SYSTEM_INFO); O(SYSTEM_INFO, dwNumberOfProcessors);
+    S(COORD); S(SMALL_RECT); S(CONSOLE_SCREEN_BUFFER_INFO); S(CONSOLE_CURSOR_INFO); S(CHAR_INFO);
+    S(KEY_EVENT_RECORD); S(MOUSE_EVENT_RECORD); S(INPUT_RECORD);
+    S(OPENFILENAMEA); S(OPENFILENAMEW); O(OPENFILENAMEW, Flags); O(OPENFILENAMEW, lpstrDefExt);
+    S(CHOOSECOLORA); S(CHOOSECOLORW); S(CHOOSEFONTW); O(CHOOSEFONTW, nSizeMin);
+    S(NOTIFYICONDATAA); S(NOTIFYICONDATAW); O(NOTIFYICONDATAW, guidItem); S(SHFILEOPSTRUCTW);
+    S(INITCOMMONCONTROLSEX); S(GUID);
+    S(WPARAM); S(LPARAM); S(LRESULT); S(DWORD); S(LONG); S(BOOL); S(WCHAR); S(HANDLE); S(SIZE_T);
+    printf("%-28s %4d\n", "MAKEINTRESOURCE", (int)(ULONG_PTR)MAKEINTRESOURCEA(32512));
+    printf("%-28s %4d\n", "HKCU low", (int)(DWORD)(ULONG_PTR)HKEY_CURRENT_USER);
+    printf("%-28s %4d\n", "HKCU high", (int)(DWORD)((ULONG_PTR)HKEY_CURRENT_USER >> 32));
+    printf("%-28s %4d\n", "WS_OVERLAPPEDWINDOW", (int)(WS_OVERLAPPEDWINDOW >> 16));
+    printf("%-28s %4d\n", "RGB(1,2,3)", (int)RGB(1, 2, 3));
+    return 0;
+}

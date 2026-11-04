@@ -1,0 +1,21 @@
+# сборки: wcc.exe, WinCC.exe и всё, что они собирают
+*.exe
+*.dll
+*.obj
+*.pdb
+*.ilk
+*.s
+compiler/obj/
+ide/bin/
+ide/obj/
+ide/.vs/
+tests/out/
+tests/winabi/out/
+setup/bin/
+setup/obj/
+setup/payload.zip
+tools/themes-export/bin/
+tools/themes-export/obj/
+docs/руководство/*.pdf
+docs/руководство/книга.html
+docs/руководство/__pycache__/

@@ -1,0 +1,264 @@
+# Приложение Г. Справочник WUI
+Все функции, типы и константы заголовка `wui.h` и список значков `wui_icons.h` — по группам, в порядке заголовка. Размеры — в точках DIP (1/96 дюйма; масштаб экрана WUI учитывает сама), тексты — строки UTF-8. Строки, которые принимают функции WUI, копируются, и после вызова их можно менять. Объяснения с примерами — в главах 13–17.
+
+## Подключение и типы
+
+:= Что | Значение
+: `#include <wui.h>` | включает `windows.h` и `gdiplus.h`; строкой `#pragma comment(lib, "wui")` подключает исходники `lib\wui`, строкой `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")` делает программу оконной
+: `wcc --console файл.c` | программа на WUI с консолью рядом — для отладочной печати
+: `WuiControl` | элемент; окно — тоже элемент. Программа держит только указатели `WuiControl *`
+: `WuiHandler` | обработчик события: `void f(WuiControl *c, void *user)`
+: `WuiPaint` | рисование холста: `void f(WuiControl *c, GpGraphics *g, float width, float height, void *user)`
+: `WuiIconData` | значок: пути контура и заливки на сетке 24 × 24
+
+## Окно
+
+:= Функция | Что делает
+: `WuiControl *wui_window(const char *title, int width, int height, const char *key)` | создаёт окно размером `width × height` точек без тени посреди монитора, где мышь; `key` — имя, под которым помнится тема, 0 — не помнить
+: `WuiControl *wui_content(WuiControl *window)` | столбец содержимого под заголовком, промежуток 12
+: `WuiControl *wui_titlebar(WuiControl *window)` | строка справа в заголовке перед кнопками окна, промежуток 8
+: `void wui_window_subtitle(WuiControl *window, const char *text)` | бледный подзаголовок после названия
+: `void wui_window_logo(WuiControl *window, const WuiIconData *icon)` | значок слева в заголовке
+: `void wui_window_extend(WuiControl *window, int on)` | 1 — содержимое до самого верха, без плашки заголовка, название и значок не рисуются; кнопки окна и `wui_titlebar` — справа поверх
+: `void wui_window_min_size(WuiControl *window, int width, int height)` | наименьший размер окна; по умолчанию 360 × 240; уже значка, `wui_titlebar` и кнопок окна окно не сжимается при любом пределе
+: `void wui_window_close(WuiControl *window)` | закрыть окно
+: `HWND wui_hwnd(WuiControl *window)` | окно Windows — для `SetTimer`, буфера обмена, диалогов
+: `int wui_run(void)` | цикл сообщений, пока открыто хоть одно окно; возвращает код выхода
+: `void wui_quit(int code)` | закрыть все окна; `wui_run` вернёт `code`
+
+Название окна меняет `wui_text(window, "…")`, читает `wui_get_text(window)`. Окно тянется за заголовок и края, разворачивается в рабочую область своего монитора, у каждого монитора свой масштаб. Когда строка заголовка не помещается, первым прячется название окна с подзаголовком.
+
+## Темы
+
+:= Функция | Что делает
+: `int wui_theme_count(void)` | число тем — 61
+: `const char *wui_theme_id(int index)` | Id темы: `"Emerald"`; неверный номер — `""`
+: `const char *wui_theme_name(int index)` | имя: `"Изумруд и золото"`
+: `const char *wui_theme_group(int index)` | группа: `"Стекло"`
+: `int wui_theme_current(void)` | номер текущей темы
+: `void wui_theme_set(const char *id)` | сменить тему во всех окнах и записать в файл ключа; Id без учёта регистра; незнакомый Id — ничего
+: `COLORREF wui_color(int which)` | цвет текущей темы для GDI
+: `ARGB wui_argb(int which)` | цвет с прозрачностью `0xAARRGGBB` для GDI+
+
+Выбор темы хранится в `%APPDATA%\ThemeLibrary\ключ.theme` — одна строка с Id, как у ThemeLibrary. Действует ключ первого окна, у которого он задан. Файл пишется только при смене темы. Таблица всех тем — в главе 16.
+
+## Цвета темы
+
+:= Константа | Номер | Цвет
+: `WUI_TEXT` | 0 | основной текст
+: `WUI_TEXT_DIM` | 1 | бледный текст
+: `WUI_ACCENT` | 2 | акцент
+: `WUI_ACCENT2` | 3 | второй акцент
+: `WUI_SUCCESS` | 4 | «хорошо»
+: `WUI_WARNING` | 5 | «внимание»
+: `WUI_DANGER` | 6 | «плохо»
+: `WUI_SURFACE` | 7 | поверхность панелей; в тёмных темах обычно белый
+
+## Раскладка
+
+:= Функция | Что делает
+: `WuiControl *wui_column(WuiControl *parent)` | столбец: дети сверху вниз, промежуток 0
+: `WuiControl *wui_row(WuiControl *parent)` | строка: дети слева направо, промежуток 10
+: `WuiControl *wui_wrap(WuiControl *parent)` | перенос: слева направо, не влезло — новая строка; промежуток 12; доли не действуют
+: `WuiControl *wui_scroll(WuiControl *parent)` | столбец с вертикальной прокруткой; доля 1
+: `WuiControl *wui_card(WuiControl *parent, const char *title)` | панель темы, внутри столбец с промежутком 10; `title` может быть 0; внутренние поля задаёт тема, `wui_padding` — свои вместо них
+: `WuiControl *wui_spacer(WuiControl *parent)` | пустое место с долей 1
+: `WuiControl *wui_separator(WuiControl *parent)` | черта толщиной 1, поля 4 сверху и снизу
+: `void wui_size(WuiControl *c, float width, float height)` | заданный размер; 0 — по содержимому
+: `void wui_min_size(WuiControl *c, float width, float height)` | наименьший размер; 0 — без ограничения
+: `void wui_stretch(WuiControl *c, float weight)` | доля остатка вдоль родителя; 0 — нет доли
+: `void wui_margin(WuiControl *c, float left, float top, float right, float bottom)` | поле снаружи элемента
+: `void wui_padding(WuiControl *c, float left, float top, float right, float bottom)` | поле внутри контейнера; у карточки — вместо полей темы
+: `void wui_gap(WuiControl *c, float gap)` | промежуток между детьми контейнера
+: `void wui_align(WuiControl *c, int align)` | выравнивание поперёк родителя
+
+:= Константа | Поперёк родителя
+: `WUI_ALIGN_STRETCH` | на всю ширину столбца или высоту строки
+: `WUI_ALIGN_START` | своего размера, к левому краю или к верху
+: `WUI_ALIGN_CENTER` | своего размера, посередине
+: `WUI_ALIGN_END` | своего размера, к правому краю или к низу
+
+Выравнивание по умолчанию: надписи с переносом, поля, ползунок, полоса хода, списки, холст, вкладки, контейнеры — `STRETCH`; кнопки, флажки, переключатели, кнопки выбора, надписи `BIG` и `SECTION` — `START`; значок и выбор темы — `CENTER`; в строке надписи, кнопки, флажки и раскрывающийся список — `CENTER`. Заданный размер сильнее `STRETCH`.
+
+## Элементы
+
+:= Функция | Что создаёт
+: `WuiControl *wui_label(WuiControl *parent, const char *text, int style)` | надпись вида `WUI_LABEL_…`
+: `WuiControl *wui_button(WuiControl *parent, const char *text, int kind)` | кнопку вида `WUI_BUTTON_…`
+: `void wui_button_icon(WuiControl *button, const WuiIconData *icon)` | значок слева от текста кнопки; с пустым текстом — кнопка-значок
+: `WuiControl *wui_nav_section(WuiControl *parent, const char *text)` | подпись группы бокового меню
+: `WuiControl *wui_nav_item(WuiControl *parent, const WuiIconData *icon, const char *text)` | пункт бокового меню; пункты с общим родителем — группа, первый выбран; `icon` может быть 0
+: `WuiControl *wui_textbox(WuiControl *parent, const char *placeholder)` | поле ввода в одну строку с подсказкой
+: `WuiControl *wui_password(WuiControl *parent, const char *placeholder)` | поле пароля: точки, без копирования
+: `WuiControl *wui_checkbox(WuiControl *parent, const char *text)` | флажок
+: `WuiControl *wui_switch(WuiControl *parent, const char *text)` | переключатель
+: `WuiControl *wui_radio(WuiControl *parent, const char *text)` | кнопку выбора; соседи по родителю — одна группа, первая выбрана
+: `WuiControl *wui_slider(WuiControl *parent, double min, double max, double value)` | ползунок; `value` обрезается по пределам
+: `WuiControl *wui_progress(WuiControl *parent)` | полосу хода: 0…1, меньше 0 — бегущая
+: `WuiControl *wui_combo(WuiControl *parent)` | раскрывающийся список
+: `int wui_combo_add(WuiControl *combo, const char *text)` | добавить пункт; возвращает его номер; первый пункт становится выбранным
+: `void wui_combo_clear(WuiControl *combo)` | убрать все пункты; значение −1
+: `WuiControl *wui_list(WuiControl *parent)` | список строк с прокруткой; сначала ничего не выбрано
+: `int wui_list_add(WuiControl *list, const char *text)` | добавить строку; возвращает её номер
+: `void wui_list_clear(WuiControl *list)` | убрать все строки; значение −1
+: `WuiControl *wui_theme_picker(WuiControl *parent)` | список всех тем по группам, шириной 230; выбрана другая тема — событие изменения
+: `WuiControl *wui_icon(WuiControl *parent, const WuiIconData *icon, float size)` | значок цветом акцента; `size` 0 — 18
+: `WuiControl *wui_tabs(WuiControl *parent)` | вкладки; доля 1
+: `WuiControl *wui_tab(WuiControl *tabs, const char *title)` | страницу вкладок — столбец с промежутком 10
+: `WuiControl *wui_canvas(WuiControl *parent, WuiPaint paint, void *user)` | холст; `paint` зовётся при каждой перерисовке, `g` в точках, начало — левый верхний угол холста
+
+:= Вид надписи | Что это
+: `WUI_LABEL_BODY` | книжный текст темы — абзацы
+: `WUI_LABEL_DIM` | мелкий бледный
+: `WUI_LABEL_H1` | крупный заголовок
+: `WUI_LABEL_H2` | заголовок поменьше
+: `WUI_LABEL_TITLE` | шрифт заголовка карточки
+: `WUI_LABEL_SECTION` | подпись группы: мелкие заглавные, без переноса
+: `WUI_LABEL_MONO` | моноширинный шрифт темы
+: `WUI_LABEL_BIG` | крупное число цветом акцента со свечением, без переноса
+: `WUI_LABEL_ACCENT` | обычный шрифт цветом акцента
+: `WUI_LABEL_TEXT` | обычный шрифт окна
+
+:= Вид кнопки | Для чего
+: `WUI_BUTTON_NORMAL` | обычное действие
+: `WUI_BUTTON_ACCENT` | главное действие окна
+: `WUI_BUTTON_DANGER` | разрушительное действие
+: `WUI_BUTTON_SUCCESS` | подтверждение
+: `WUI_BUTTON_GHOST` | тихая кнопка без фона
+
+## Общее для всех элементов
+
+:= Функция | Что делает
+: `void wui_text(WuiControl *c, const char *text)` | новый текст: надписи, кнопки, подписи, содержимого поля, названия окна
+: `const char *wui_get_text(WuiControl *c)` | текст в UTF-8; у поля строка годна, пока поле не поправили (при том же тексте повторный вызов отдаёт ту же строку), у списков — пока не очищены пункты
+: `void wui_value(WuiControl *c, double value)` | значение: флажок 0 или 1, ползунок (обрезается по пределам), полоса, выбранный пункт (список прокручивается к выбранной строке), вкладка, выбор кнопки выбора и пункта меню
+: `double wui_get_value(WuiControl *c)` | значение
+: `void wui_enable(WuiControl *c, int on)` | 0 — выключить: полупрозрачный, без мыши и клавиатуры, Tab пропускает; у контейнера выключает и всё, что внутри
+: `void wui_show(WuiControl *c, int on)` | 0 — спрятать вместе с местом
+: `void wui_on_click(WuiControl *c, WuiHandler fn, void *user)` | обработчик щелчка; 0 — снять
+: `void wui_on_change(WuiControl *c, WuiHandler fn, void *user)` | обработчик изменения; 0 — снять
+: `void wui_focus(WuiControl *c)` | фокус клавиатуры на элемент; можно звать и до `wui_run`
+: `void wui_redraw(WuiControl *c)` | перерисовать — нужно холсту после правки его данных
+: `void wui_set_data(WuiControl *c, void *data)` | прицепить к элементу свой указатель
+: `void *wui_get_data(WuiControl *c)` | получить его
+: `WuiControl *wui_window_of(WuiControl *c)` | окно, в котором лежит элемент
+
+События вызывает только пользователь; `wui_value` и `wui_text` из программы обработчиков не зовут.
+
+:= Элемент | Значение и текст | Щелчок | Изменение
+: Надпись | текст | — | —
+: Кнопка | текст | мышь, пробел, Enter | —
+: Поле, поле пароля | текст — введённое | Enter | каждая правка
+: Флажок, переключатель | 0 или 1; текст — подпись | при переключении, после изменения | при переключении
+: Кнопка выбора | 1 у выбранной; текст — подпись | при выборе и щелчке по выбранной | —
+: Ползунок | от `min` до `max`, дробное | — | при движении мышью и стрелками; стрелка на краю — нет
+: Полоса хода | заданное число | — | —
+: Раскрывающийся список | номер пункта, −1 — пуст; текст пункта | — | выбран другой пункт
+: Список | номер строки, −1 — нет выбора; текст строки | двойной щелчок, Enter | выбрана строка
+: Вкладки | номер открытой страницы | — | открыта другая
+: Пункт бокового меню | 1 у выбранного; текст | при выборе | —
+: Выбор темы | номер темы; имя темы | — | выбрана другая тема
+: Холст | — | кнопку мыши отпустили над холстом | —
+
+## Размеры и числа по умолчанию
+
+:= Что | Сколько
+: Наименьшее окно | 360 × 240, и не уже значка, `wui_titlebar` и кнопок окна
+: Промежуток: содержимое окна, перенос | 12
+: Промежуток: строка, карточка, страница вкладок | 10
+: Промежуток: столбец, прокрутка | 0
+: Доля 1 по умолчанию | прокрутка, пустое место, вкладки, страницы вкладок
+: Поле ввода | ширина 160, высота строки темы
+: Ползунок | 120 × 24; стрелки — шаг в 1/20 пределов
+: Полоса хода | 100 × 8
+: Список | ширина 160, высота от 3 до 8 строк по числу строк; колесо — 3 строки
+: Раскрывающийся список | по самому длинному пункту, не уже 60, плюс 30 на стрелку
+: Выбор темы | ширина 230
+: Холст | 100 × 100
+: Значок | заданный размер; на кнопке и в пункте меню — 18
+: Прокрутка | колесо — 48 точек за щелчок
+: Всплывающая строка | около 2,6 секунды
+
+## Сообщения
+
+:= Функция | Что делает
+: `void wui_toast(WuiControl *window, const char *text)` | строка внизу окна на две-три секунды; новая заменяет прежнюю
+: `int wui_message(WuiControl *window, const char *title, const char *text, int buttons)` | сообщение темы поверх окна-хозяина, хозяин выключен, пока нет ответа; 1 — «ОК» или «Да», 0 — «Отмена», «Нет», Esc, крестик
+
+:= Константа | Кнопки
+: `WUI_MSG_OK` | «ОК»
+: `WUI_MSG_OK_CANCEL` | «ОК», «Отмена»
+: `WUI_MSG_YES_NO` | «Да», «Нет»
+
+## Клавиатура
+
+:= Где | Клавиши
+: Окно | Tab, Shift+Tab — следующий и предыдущий элемент; Alt+F4 — закрыть
+: Кнопка, флажок, переключатель, кнопка выбора, пункт меню | пробел, Enter
+: Поле ввода | стрелки, Home, End, с Shift — выделение; Ctrl+стрелки — по словам; Backspace, Delete, с Ctrl — по слову; Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+Z; Enter — щелчок
+: Ползунок | стрелки
+: Раскрывающийся список | пробел, Enter, F4, Alt+стрелка вниз — раскрыть; стрелки вверх и вниз — другой пункт
+: Раскрытый список | стрелки, Page Up, Page Down, Home, End; Enter, пробел — выбрать; Esc — закрыть
+: Список | стрелки, Home, End; Enter — щелчок
+: Вкладки | стрелки влево и вправо
+: Сообщение | Enter, пробел — первая кнопка; Esc — ответ 0
+
+## Значки
+
+:= Поле `WuiIconData` | Что это
+: `const float *stroke` | путь контура, обводится пером
+: `int stroke_count` | сколько в нём чисел
+: `const float *fill` | путь заливки
+: `int fill_count` | сколько в нём чисел
+: `int fill_nonzero` | 0 — внутренний контур вырезает дыру, 1 — закрашивается всё внутри
+
+Путь — числа подряд на сетке 24 × 24: `0 x y` — начать фигуру, `1 x y` — линия, `2 x1 y1 x2 y2 x y` — кривая Безье, `3` — замкнуть фигуру.
+
+:= Функция | Что делает
+: `void wui_draw_icon(GpGraphics *g, const WuiIconData *icon, float x, float y, float size, ARGB color)` | нарисовать значок на холсте: левый верхний угол `x, y`, сторона `size`
+
+Значки ThemeLibrary — 123 константы вида `const WuiIconData *`. В программу попадают только упомянутые.
+
+:= Значок | Значок | Значок | Значок
+: `WUI_ICON_HOME` | `WUI_ICON_MENU` | `WUI_ICON_CLOSE` | `WUI_ICON_PLUS`
+: `WUI_ICON_MINUS` | `WUI_ICON_CHECK` | `WUI_ICON_CHEVRON_LEFT` | `WUI_ICON_CHEVRON_RIGHT`
+: `WUI_ICON_CHEVRON_UP` | `WUI_ICON_CHEVRON_DOWN` | `WUI_ICON_ARROW_LEFT` | `WUI_ICON_ARROW_RIGHT`
+: `WUI_ICON_ARROW_UP` | `WUI_ICON_ARROW_DOWN` | `WUI_ICON_REFRESH` | `WUI_ICON_UNDO`
+: `WUI_ICON_REDO` | `WUI_ICON_SEARCH` | `WUI_ICON_FILTER` | `WUI_ICON_SORT`
+: `WUI_ICON_MORE_HORIZONTAL` | `WUI_ICON_MORE_VERTICAL` | `WUI_ICON_EXTERNAL_LINK` | `WUI_ICON_LINK`
+: `WUI_ICON_COPY` | `WUI_ICON_CUT` | `WUI_ICON_PASTE` | `WUI_ICON_EDIT`
+: `WUI_ICON_TRASH` | `WUI_ICON_SAVE` | `WUI_ICON_DOWNLOAD` | `WUI_ICON_UPLOAD`
+: `WUI_ICON_SHARE` | `WUI_ICON_PRINT` | `WUI_ICON_FILE` | `WUI_ICON_FILE_TEXT`
+: `WUI_ICON_FOLDER` | `WUI_ICON_FOLDER_OPEN` | `WUI_ICON_ARCHIVE` | `WUI_ICON_IMAGE`
+: `WUI_ICON_MUSIC` | `WUI_ICON_VIDEO` | `WUI_ICON_CODE` | `WUI_ICON_DATABASE`
+: `WUI_ICON_HARD_DRIVE` | `WUI_ICON_CLOUD` | `WUI_ICON_INFO` | `WUI_ICON_WARNING`
+: `WUI_ICON_ERROR` | `WUI_ICON_SUCCESS` | `WUI_ICON_HELP` | `WUI_ICON_BELL`
+: `WUI_ICON_LOCK` | `WUI_ICON_UNLOCK` | `WUI_ICON_KEY` | `WUI_ICON_SHIELD`
+: `WUI_ICON_EYE` | `WUI_ICON_EYE_OFF` | `WUI_ICON_USER` | `WUI_ICON_USERS`
+: `WUI_ICON_MAIL` | `WUI_ICON_CHAT` | `WUI_ICON_PHONE` | `WUI_ICON_GLOBE`
+: `WUI_ICON_WIFI` | `WUI_ICON_SEND` | `WUI_ICON_CLOCK` | `WUI_ICON_CALENDAR`
+: `WUI_ICON_HOURGLASS` | `WUI_ICON_HISTORY` | `WUI_ICON_SETTINGS` | `WUI_ICON_SLIDERS`
+: `WUI_ICON_WRENCH` | `WUI_ICON_POWER` | `WUI_ICON_PLAY` | `WUI_ICON_PAUSE`
+: `WUI_ICON_STOP` | `WUI_ICON_SKIP_FORWARD` | `WUI_ICON_SKIP_BACK` | `WUI_ICON_VOLUME`
+: `WUI_ICON_MUTE` | `WUI_ICON_MICROPHONE` | `WUI_ICON_LINE_CHART` | `WUI_ICON_BAR_CHART`
+: `WUI_ICON_PIE_CHART` | `WUI_ICON_TABLE` | `WUI_ICON_LIST` | `WUI_ICON_GRID`
+: `WUI_ICON_LAYERS` | `WUI_ICON_TAG` | `WUI_ICON_BOOKMARK` | `WUI_ICON_STAR`
+: `WUI_ICON_HEART` | `WUI_ICON_FLAG` | `WUI_ICON_PIN` | `WUI_ICON_MAP`
+: `WUI_ICON_COMPASS` | `WUI_ICON_SUN` | `WUI_ICON_MOON` | `WUI_ICON_PENTAGRAM`
+: `WUI_ICON_EYE_OF_PROVIDENCE` | `WUI_ICON_ANKH` | `WUI_ICON_SATURN` | `WUI_ICON_CANDLE`
+: `WUI_ICON_CRYSTAL` | `WUI_ICON_SCROLL` | `WUI_ICON_BOOK` | `WUI_ICON_QUILL`
+: `WUI_ICON_INFINITY` | `WUI_ICON_YIN_YANG` | `WUI_ICON_FIRE` | `WUI_ICON_WATER`
+: `WUI_ICON_WIND` | `WUI_ICON_MOUNTAIN` | `WUI_ICON_ALCHEMY_FIRE` | `WUI_ICON_ALCHEMY_WATER`
+: `WUI_ICON_ALCHEMY_AIR` | `WUI_ICON_ALCHEMY_EARTH` | `WUI_ICON_MERCURY` | `WUI_ICON_SULFUR`
+: `WUI_ICON_SALT` | `WUI_ICON_CARDS` | `WUI_ICON_ZODIAC` | 
+
+## Переменные окружения
+
+WUI читает их при создании первого окна программы.
+
+:= Переменная | Что делает
+: `WUI_SNAPSHOT=файл.png` | сохранить первое окно картинкой после первой отрисовки и закрыть программу; окно на экране не показывается
+: `WUI_SNAPSHOT_WAIT=1` | вместе с `WUI_SNAPSHOT`: окно показывается и живёт, снимок `файл-N.png` — по сообщению окну `WM_APP+3` с `N` в `wParam`
+: `WUI_THEME=Id` | тема вместо запомненной; файл ключа не меняется
+: `WUI_SIZE=ширина,высота` | размер окна в точках вместо заданного
+: `WUI_SCALE=число` | масштаб экрана вместо настоящего: `2` — как при 200 %

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>WinCCSetup</AssemblyName>
+    <RootNamespace>WinCC.Setup</RootNamespace>
+    <StartupObject>WinCC.Setup.App</StartupObject>
+    <OutputPath>bin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <DebugType>none</DebugType>
+    <ApplicationIcon>..\ide\icon.ico</ApplicationIcon>
+    <AssemblyTitle>Установка WinCC — компилятора Си для Windows</AssemblyTitle>
+    <Product>WinCC Setup</Product>
+    <Version>1.2.0</Version>
+    <Company>О. Кобенко</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="payload.zip" LogicalName="payload.zip" Condition="Exists('payload.zip')" />
+    <Resource Include="..\ide\icon.ico" Link="icon.ico" />
+  </ItemGroup>
+
+  <!-- стили ThemeLibrary вшиты исходниками (одна тема, без выбора) -->
+  <Import Project="..\..\Libraries\ThemeLibrary\ThemeLibrary.Source.props" />
+
+  <!-- готовый WinCCSetup.exe — в корень WinCC\ -->
+  <Target Name="CopySetupToRoot" AfterTargets="Build">
+    <Copy SourceFiles="$(OutDir)WinCCSetup.exe" DestinationFolder="$(MSBuildProjectDirectory)\.." />
+  </Target>
+
+</Project>

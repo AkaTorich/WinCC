@@ -1,0 +1,34 @@
+<UserControl x:Class="WinCC.Editor.CodeEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:WinCC.Editor">
+    <!-- Поле ввода с прозрачными буквами; цветной текст рисует слой поверх, номера строк — полоса слева -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <local:LineNumbers x:Name="Gutter" Grid.Column="0"/>
+
+        <TextBox x:Name="Box" Grid.Column="1"
+                 AcceptsReturn="True" AcceptsTab="False" TextWrapping="NoWrap"
+                 HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                 Background="Transparent" Foreground="Transparent" BorderThickness="0"
+                 Padding="8,4,8,4" FontSize="14" SelectionOpacity="0.35"
+                 CaretBrush="{DynamicResource Theme.Text}" SelectionBrush="{DynamicResource Theme.Accent}"
+                 FontFamily="{DynamicResource Theme.Font.Mono}"
+                 UndoLimit="500" IsInactiveSelectionHighlightEnabled="True">
+            <TextBox.Template>
+                <ControlTemplate TargetType="TextBox">
+                    <ScrollViewer x:Name="PART_ContentHost" Focusable="False" Background="Transparent"
+                                  Padding="{TemplateBinding Padding}"
+                                  HorizontalScrollBarVisibility="{TemplateBinding HorizontalScrollBarVisibility}"
+                                  VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"/>
+                </ControlTemplate>
+            </TextBox.Template>
+        </TextBox>
+
+        <local:HighlightLayer x:Name="Layer" Grid.Column="1" IsHitTestVisible="False"/>
+    </Grid>
+</UserControl>

@@ -1,0 +1,54 @@
+#include "test.h"
+int main(void)
+{
+    ASSERT(0, 0);
+    ASSERT(42, 42);
+    ASSERT(21, 5+20-4);
+    ASSERT(47, 5+6*7);
+    ASSERT(15, 5*(9-6));
+    ASSERT(4, (3+5)/2);
+    ASSERT(10, -10+20);
+    ASSERT(1, 7 % 3);
+    ASSERT(-1, -7 % 3);
+    ASSERT(-2, -7 / 3);
+    ASSERT(1, 0==0);
+    ASSERT(0, 42!=42);
+    ASSERT(1, 0<1);
+    ASSERT(0, 1<0);
+    ASSERT(1, 1>=1);
+    ASSERT(1, 2>1);
+    ASSERT(8, 1<<3);
+    ASSERT(-4, -16>>2);
+    ASSERT(3, 7&3);
+    ASSERT(7, 5|2);
+    ASSERT(6, 5^3);
+    ASSERT(-1, ~0);
+    ASSERT(0, !1);
+    ASSERT(1, 1&&2);
+    ASSERT(0, 0&&(1/0));
+    ASSERT(1, 1||(1/0));
+    ASSERT(2, (1,2));
+    ASSERT(5, 1 ? 5 : 6);
+    unsigned u = 4000000000u;
+    ASSERT(4000000000, u);
+    ASSERT(1, u > 1);
+    ASSERT(2000000000, u / 2);
+    long long big = 1LL << 40;
+    ASSERT(1099511627776, big);
+    ASSERT(-1, (int)0xFFFFFFFF);
+    ASSERT(255, (unsigned char)-1);
+    ASSERT(-1, (signed char)255);
+    ASSERT(65535, (unsigned short)-1);
+    int x = 10;
+    x += 5; ASSERT(15, x);
+    x -= 3; ASSERT(12, x);
+    x *= 2; ASSERT(24, x);
+    x /= 5; ASSERT(4, x);
+    x %= 3; ASSERT(1, x);
+    x <<= 4; ASSERT(16, x);
+    x |= 3; ASSERT(19, x);
+    ASSERT(19, x++); ASSERT(20, x);
+    ASSERT(21, ++x);
+    ASSERT(21, x--); ASSERT(19, --x);
+    return g_fail;
+}

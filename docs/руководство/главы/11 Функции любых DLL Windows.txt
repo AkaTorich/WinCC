@@ -1,0 +1,250 @@
+# Функции любых DLL Windows
+В заголовках WinCC объявлено около шестисот функций Windows — самые ходовые. Но у Windows их десятки тысяч, и рано или поздно понадобится функция, которой в `windows.h` нет: размер в «человеческих» единицах из `shlwapi.dll`, цвет оформления из `dwmapi.dll`, состояние батареи. Эта глава объясняет, как wcc узнаёт, в какой DLL лежит функция, как подключить DLL, которую он не просматривает сам, как объявить функцию, которой нет в заголовках, и как загрузить DLL уже во время работы программы — `LoadLibraryA` и `GetProcAddress`.
+
+## Как wcc находит функцию
+
+Когда программа зовёт функцию, которой в ней самой нет, wcc должен записать в `.exe`, из какой DLL её брать. Компилятор Visual Studio узнаёт это из файлов `.lib`, которые лежат в его комплекте для каждой DLL Windows. У WinCC таких файлов нет и не нужно: он открывает сами DLL и читает их таблицы экспорта — списки имён, которые каждая DLL отдаёт наружу.
+
+Просматривает он не всю систему, а список DLL, составленный в таком порядке:
+
+1. DLL из ключей `-l` командной строки — в том порядке, в каком они написаны;
+2. DLL из строк `#pragma comment(lib, "имя")` в исходниках и заголовках;
+3. десять DLL, которые просматриваются всегда.
+
+:= DLL | Что в ней
+: `kernel32` | файлы, память, процессы и потоки, время, консоль, загрузка DLL
+: `user32` | окна, сообщения, меню, элементы, клавиатура и мышь, буфер обмена
+: `gdi32` | рисование: перья, кисти, шрифты, картинки
+: `comdlg32` | диалоги «Открыть», «Сохранить», выбор цвета и шрифта
+: `shell32` | открыть файл его программой, папки Windows, значок в трее, перетаскивание файлов
+: `advapi32` | реестр, имя пользователя
+: `comctl32` | полоса хода, ползунок, строка состояния и другие элементы
+: `ole32` | основа COM
+: `winmm` | звук, таймер в миллисекундах
+: `ws2_32` | сокеты
+
+Имя ищется по списку сверху вниз, и берётся первая DLL, у которой оно есть. Поэтому DLL из `-l` важнее всех: если в своей DLL есть функция с тем же именем, что у функции Windows, программа получит свою. А функция, которая определена в самой программе, в DLL вообще не ищется — программа всегда зовёт свою.
+
+Сами DLL wcc ищет так же, как свои DLL из главы 10: в папке первого исходника, в папке, куда пишется программа, и в `System32`. Читает он их только при сборке; в готовой программе остаются лишь имена DLL и функций, а находит их при запуске уже Windows.
+
+## DLL, которой нет в списке
+
+Функцию из DLL вне списка wcc не найдёт и скажет об этом прямо. Вот что будет, если позвать `StrFormatByteSizeW` из `shlwapi.dll` без подключения:
+
+```
+> wcc dirsize.c
+функция объявлена, но не написана — StrFormatByteSizeW: её нет ни в программе, ни в библиотеках Windows (своя DLL — ключ -l имя или #pragma comment(lib, "имя"))
+```
+
+Подключить DLL можно двумя способами, и оба равноправны:
+
+```
+wcc dirsize.c -l shlwapi
+```
+
+или строкой в самом исходнике:
+
+```
+#pragma comment(lib, "shlwapi")
+```
+
+Второй способ лучше, когда функция нужна одному файлу: строка стоит рядом с объявлением, и собирать программу можно без ключей, хоть из окна WinCC. Имя пишут без расширения; `"shlwapi.dll"` и `"shlwapi.lib"` тоже поймутся, так что строки из чужих исходников под Visual Studio подходят как есть.
+
+У `#pragma comment(lib, …)` в WinCC есть второе значение. Если рядом с `wcc.exe` есть папка `lib\имя`, это не DLL, а библиотека исходниками: её файлы `.c` собираются вместе с программой. Так подключаются WUI (`lib\wui`) и сеть (`lib\net`) — строка уже стоит в `wui.h` и `net.h`, писать её самому не нужно (главы 13 и 18).
+
+В какой DLL лежит функция, пишет документация Windows: у каждой функции есть таблица требований, и в ней строка «DLL». Там же указан заголовок Visual Studio, где функция объявлена, — его у WinCC может не быть, но это не помеха.
+
+## Своё объявление функции
+
+Функция, которой нет в заголовках WinCC, объявляется прямо в программе — так же, как в документации Windows, с теми же типами. Без объявления не обойтись: Си не даёт звать необъявленную функцию, и wcc остановится на первом же её вызове с сообщением `файл:строка: функция GetSystemPowerStatus не объявлена (нет #include с ней?)`. Сообщение о функции, объявленной, но не найденной ни в одной DLL, выглядит иначе — «функция объявлена, но не написана», как выше: первое значит, что не хватает объявления, второе — что не подключена DLL. Вот программа, которой нужны две функции `kernel32`, не объявленные в заголовках WinCC (её wcc просматривает всегда, так что подключать ничего не надо) и структура, которой тоже нет в заголовках.
+
+```
+#include <windows.h>
+#include <stdio.h>
+
+// Этого нет в windows.h WinCC — объявляем сами, как в документации Windows
+typedef struct {
+    BYTE ACLineStatus;          // 0 — от батареи, 1 — от сети, 255 — неизвестно
+    BYTE BatteryFlag;           // 128 — батареи нет
+    BYTE BatteryLifePercent;    // 0…100, 255 — неизвестно
+    BYTE SystemStatusFlag;
+    DWORD BatteryLifeTime;
+    DWORD BatteryFullLifeTime;
+} SYSTEM_POWER_STATUS;
+
+BOOL GetSystemPowerStatus(SYSTEM_POWER_STATUS *status);
+UINT GetWindowsDirectoryA(LPSTR buf, UINT size);
+
+int main(void)
+{
+    char dir[MAX_PATH];
+    GetWindowsDirectoryA(dir, MAX_PATH);
+    printf("Папка Windows: %s\n", dir);
+
+    SYSTEM_POWER_STATUS ps;
+    if (!GetSystemPowerStatus(&ps)) {
+        printf("Питание: не узнать (ошибка %lu)\n", GetLastError());
+        return 1;
+    }
+    printf("Питание: %s\n", ps.ACLineStatus == 1 ? "от сети" : ps.ACLineStatus == 0 ? "от батареи" : "неизвестно");
+    if (ps.BatteryFlag & 128)
+        printf("Батареи нет\n");
+    else
+        printf("Заряд: %d %%\n", ps.BatteryLifePercent);
+    return 0;
+}
+```
+
+```
+Папка Windows: C:\Windows
+Питание: от сети
+Батареи нет
+```
+
+На настольном компьютере программа честно говорит, что батареи нет; на ноутбуке она покажет заряд.
+
+Объявление — это обещание компилятору, и проверить его он не может: в DLL записаны только имена, без типов. Поэтому ошибка в объявлении не даёт сообщения при сборке, а проявляется при работе — неверными числами или падением. Несколько правил избавляют от большинства таких ошибок.
+
+- Типы берутся из документации буква в букву. `DWORD`, `UINT`, `LONG` и `BOOL` — 4 байта, `BOOLEAN` и `BYTE` — 1, `HANDLE`, `HWND` и прочие описатели, `SIZE_T`, `LPARAM` и указатели — 8. В WinCC `long` занимает 4 байта, как в Visual Studio, поэтому `DWORD` из `windows.h` совпадает с настоящим.
+- Особенно точно — числа с плавающей точкой. В 64-разрядной Windows `float` и `double` передаются в других регистрах процессора, чем целые, и функция, объявленная с `int` вместо `double`, получит совсем не то.
+- Структура объявляется со всеми полями в том же порядке. Выравнивание WinCC делает таким же, как Visual Studio; если в документации или в заголовках Windows у структуры стоит `#pragma pack`, его надо повторить (глава 5).
+- У функций с текстом в Windows два варианта: `A` и `W`. В заголовках WinCC обычное имя само превращается в один из них, а в своём объявлении нужно назвать вариант явно — `GetWindowsDirectoryA`, а не `GetWindowsDirectory`: функции с таким именем в DLL нет.
+- Слова `WINAPI`, `CALLBACK`, `__stdcall` можно писать и не писать: в 64-разрядной Windows соглашение о вызове одно, и WinCC эти слова принимает и пропускает.
+
+A-функции из своих объявлений получают текст в UTF-8 и отдают в UTF-8 — так работает манифест, вшитый в каждую программу (глава 7). Исключение — функции текста GDI, которые манифест не слушает. Те из них, что объявлены в `windows.h`, WinCC пропускает через свои переходники, но если объявить сам какую-то другую A-функцию рисования текста, кириллица в ней испортится. С GDI надёжнее брать W-вариант и строки `L"…"`.
+
+## Программа с функцией из shlwapi
+
+Полный пример: размер папки со всеми вложенными. Обходят файлы функции `kernel32` из `windows.h`, а размер «по-человечески» — в килобайтах, мегабайтах, на языке Windows — даёт `StrFormatByteSizeW` из `shlwapi.dll`.
+
+```
+// Сколько места занимает папка: обход файлов и размер «по-человечески»
+#include <windows.h>
+#include <stdio.h>
+#pragma comment(lib, "shlwapi")
+
+PWSTR StrFormatByteSizeW(LONGLONG size, PWSTR buf, UINT cap);    // из shlwapi.dll
+
+static long long folder_size(const char *dir, int *files)
+{
+    char mask[MAX_PATH * 2];
+    snprintf(mask, sizeof(mask), "%s\\*", dir);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(mask, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    long long total = 0;
+    do {
+        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+            continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            char sub[MAX_PATH * 2];
+            snprintf(sub, sizeof(sub), "%s\\%s", dir, fd.cFileName);
+            total += folder_size(sub, files);
+        } else {
+            total += ((long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+            (*files)++;
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return total;
+}
+
+int main(int argc, char **argv)
+{
+    const char *dir = argc > 1 ? argv[1] : ".";
+    int files = 0;
+    long long bytes = folder_size(dir, &files);
+    wchar_t text[64];
+    StrFormatByteSizeW(bytes, text, 64);
+    printf("%s: %d файлов, %ls (%lld байт)\n", dir, files, text, bytes);
+    return 0;
+}
+```
+
+```
+> wcc dirsize.c
+Готово: dirsize.exe — консольная программа, 68608 байт, 157 мс
+> dirsize C:\Windows\Fonts
+C:\Windows\Fonts: 376 файлов, 397 МБ (416324412 байт)
+```
+
+`StrFormatByteSizeW` взята в W-варианте ради ясности: строку UTF-16 `printf` печатает по `%ls`, и единицы «КБ», «МБ» приходят на языке системы. Пути в программе — UTF-8, и `FindFirstFileA` принимает их как есть, с кириллицей.
+
+## LoadLibraryA и GetProcAddress
+
+Всё, о чём шла речь до сих пор, — связывание при запуске: DLL записана в программе, Windows загружает её до `main`, и если DLL или функции нет, программа не запускается. Иногда нужно иначе:
+
+- функция есть только в новых версиях Windows, а программа должна работать и на старых — просто без этой возможности;
+- DLL может отсутствовать: необязательный модуль, расширение;
+- имя DLL или функции известно только во время работы — например, из настроек.
+
+Для этого DLL загружают сами. `LoadLibraryA("имя.dll")` загружает DLL и возвращает её описатель или `NULL`, `GetProcAddress(dll, "Имя")` возвращает адрес функции или `NULL`, `FreeLibrary(dll)` отпускает DLL, когда она больше не нужна. Если DLL уже загружена в процесс — например, `ntdll.dll`, которая есть в любом процессе, или `user32.dll`, — достаточно `GetModuleHandleA`, загружать и освобождать её не нужно.
+
+`GetProcAddress` возвращает `FARPROC` — указатель на функцию без параметров. Чтобы позвать функцию правильно, адрес приводят к указателю на функцию нужного вида; удобнее всего завести для него `typedef`.
+
+```
+#include <windows.h>
+#include <stdio.h>
+
+typedef struct {
+    DWORD dwOSVersionInfoSize, dwMajorVersion, dwMinorVersion, dwBuildNumber, dwPlatformId;
+    WCHAR szCSDVersion[128];
+} RTL_OSVERSIONINFOW;
+
+typedef LONG (*RtlGetVersionFn)(RTL_OSVERSIONINFOW *info);
+typedef HRESULT (*DwmGetColorizationColorFn)(DWORD *color, BOOL *opaque);
+
+int main(void)
+{
+    // ntdll.dll уже загружена в любой процесс: достаточно взять её описатель
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    RtlGetVersionFn get_version = (RtlGetVersionFn)GetProcAddress(ntdll, "RtlGetVersion");
+    RTL_OSVERSIONINFOW v = { sizeof(v) };
+    if (get_version && get_version(&v) == 0)
+        printf("Windows %lu.%lu, сборка %lu\n", v.dwMajorVersion, v.dwMinorVersion, v.dwBuildNumber);
+
+    // dwmapi.dll загружаем сами — и сами же отпускаем
+    HMODULE dwm = LoadLibraryA("dwmapi.dll");
+    if (!dwm) {
+        printf("dwmapi.dll не загрузилась (ошибка %lu)\n", GetLastError());
+        return 1;
+    }
+    DwmGetColorizationColorFn get_color =
+        (DwmGetColorizationColorFn)GetProcAddress(dwm, "DwmGetColorizationColor");
+    DWORD color;
+    BOOL opaque;
+    if (get_color && SUCCEEDED(get_color(&color, &opaque)))
+        printf("Цвет оформления окон: #%06lX\n", color & 0xFFFFFF);
+
+    FARPROC missing = GetProcAddress(dwm, "DwmНетТакой");
+    printf("Несуществующая функция: %s (ошибка %lu)\n", missing ? "есть" : "нет", GetLastError());
+    FreeLibrary(dwm);
+    return 0;
+}
+```
+
+```
+Windows 10.0, сборка 19045
+Цвет оформления окон: #006FC7
+Несуществующая функция: нет (ошибка 127)
+```
+
+Программа собирается без единого `-l`: `LoadLibraryA`, `GetModuleHandleA` и `GetProcAddress` живут в `kernel32`, а имена `ntdll.dll` и `dwmapi.dll` — просто строки, которые wcc не разбирает. Ошибка 127 — `ERROR_PROC_NOT_FOUND`, «процедура не найдена»: так `GetProcAddress` сообщает, что имени в DLL нет. Если же не нашлась сама DLL, `LoadLibraryA` вернёт `NULL` с ошибкой 126, `ERROR_MOD_NOT_FOUND`.
+
+`RtlGetVersion` выбрана не случайно: она сообщает настоящую версию Windows. Ради неё стоит идти через `GetProcAddress`, даже имея возможность подключить `ntdll` строкой `#pragma comment(lib, "ntdll")` — так тоже можно, `ntdll.dll` лежит в `System32`, и wcc найдёт в ней имя.
+
+Так же устроен калькулятор из примеров WinCC. Функция `SetProcessDpiAwarenessContext`, которая включает чёткую картинку на любом масштабе экрана, есть только в Windows 10 начиная с выпуска 1703. Калькулятор берёт её через `GetProcAddress` из `user32.dll` и зовёт, только если адрес не `NULL`; на старой системе он просто работает без неё. А `DwmSetWindowAttribute`, которая делает заголовок окна тёмным, калькулятор берёт обычным путём: своё объявление и `#pragma comment(lib, "dwmapi")`.
+
+## Чего так не сделать
+
+Через свои объявления и `GetProcAddress` доступна любая функция, которую DLL отдаёт по имени. Несколько случаев остаются за чертой.
+
+- 32-разрядные DLL. Программы WinCC 64-разрядные, а 64-разрядный процесс не может загрузить 32-разрядную DLL — так устроена Windows. wcc просматривает только 64-разрядные DLL; 32-разрядную он пропустит, как будто имени в ней нет.
+- Функции, которые DLL отдаёт только по номеру, без имени. Их можно получить `GetProcAddress`, передав вместо имени номер: `GetProcAddress(dll, (LPCSTR)(ULONG_PTR)12)`. Связать их при сборке нельзя.
+- Функции C++ с украшенными именами вроде `?add@@YAHHH@Z` — их имя зависит от компилятора, и звать их из Си неудобно и ненадёжно. Из DLL на C++ зовут то, что объявлено в ней как `extern "C"`.
+- Объекты COM — интерфейсы с таблицами методов. Функции `ole32` вроде `CoInitializeEx` объявляются как любые другие, но сами интерфейсы на Си описываются вручную, структурой с указателями на функции, и это отдельная большая работа.
+
+## Итог
+
+wcc узнаёт, какая DLL даёт функцию, читая таблицы экспорта самих DLL: сначала из ключей `-l`, потом из строк `#pragma comment(lib, …)`, потом десять системных DLL, которые просматриваются всегда. DLL вне этого списка подключают одной строкой `#pragma comment(lib, "имя")` или ключом `-l имя`. Функцию, которой нет в заголовках, объявляют сами — точно по документации, с явным `A` или `W` в имени. Если DLL или функции может не быть, их берут во время работы через `LoadLibraryA` и `GetProcAddress` и проверяют результат на `NULL`.

@@ -1,0 +1,533 @@
+# Программа целиком на WUI
+Прошлые главы разбирали WUI по частям: окно, раскладку, элементы, темы, холст. Эта глава проходит путь целиком — от замысла до готового exe — на настоящей программе, которой можно пользоваться каждый день: учёт расходов по категориям за месяц. Программа собрана из четырёх файлов, хранит записи в обычном текстовом файле, рисует столбики на холсте и выглядит своей в любой из шестидесяти одной темы. По дороге видно, как делить программу на файлы, где держать данные, как связывать их с окном и что проверить перед тем, как отдать exe другим.
+
+## Замысел
+
+Сначала — что программа должна делать, без слов о функциях и элементах. Человек тратит деньги и хочет знать, куда они уходят. Значит:
+
+- записать трату быстро: сумма, категория, короткая заметка — и Enter;
+- видеть траты месяца списком, свежие сверху;
+- удалить ошибочную запись, но не случайно — с вопросом;
+- видеть итог месяца и то, как он делится по категориям;
+- листать месяцы назад и вперёд;
+- ничего не сохранять руками: закрыл окно — всё на месте;
+- выбрать вид окна и не выбирать его каждый раз заново.
+
+Из этого списка уже видно окно. Слева — карточка «Новая запись» с полем суммы, раскрывающимся списком категорий, полем заметки и кнопкой «Добавить», под ней список записей на всю высоту, под списком — число записей и кнопка «Удалить». Справа — узкая карточка месяца: стрелки и название месяца, итог крупным числом, под ним столбики по восьми категориям. В заголовке — выбор темы.
+
+Видно и то, чего в окне не будет. Нет кнопки «Сохранить»: WUI не даёт перехватить закрытие окна (глава 13), поэтому программа сохраняет файл после каждой правки. Нет правки записи: ошибочную проще удалить и записать заново. Нет своих категорий: восемь постоянных покрывают почти всё, а «Прочее» принимает остальное. Каждое «нет» — это код, который не придётся писать и проверять; добавить его можно потом.
+
+## Файлы программы
+
+Программа делится на четыре файла, и у каждого одна задача.
+
+:= Файл | Что в нём
+: `money.h` | общее: запись о трате, категории, объявления функций двух других файлов
+: `data.c` | записи в памяти и в файле: добавить, удалить, прочесть, сохранить, итог месяца
+: `chart.c` | столбики по категориям на холсте
+: `main.c` | окно: раскладка, обработчики, связь окна с данными
+
+Граница проходит по смыслу. `data.c` ничего не знает об окне: его можно взять в консольную программу, которая печатает отчёт за год. `chart.c` знает только, как нарисовать восемь чисел. Окно и события — только в `main.c`. Когда понадобится поправить формат файла, искать придётся в одном месте, и окно этого не заметит.
+
+Собираются все файлы одной командой — wcc принимает сколько угодно исходников (глава 4):
+
+```
+wcc main.c data.c chart.c -o Расходы.exe
+```
+
+## Шаг 1. Общий заголовок
+
+```
+// файл: money.h
+// Расходы: общее для всех файлов программы.
+#pragma once
+#include <wui.h>
+
+enum { CATEGORIES = 8 };
+extern const char *category_names[CATEGORIES];
+
+typedef struct {
+    int day, month, year;
+    double sum;
+    int category;               // номер в category_names
+    char note[120];
+} Expense;
+
+// data.c — записи в памяти и в файле
+int  money_open(const char *path);          // прочесть файл; 0 — файла ещё нет
+int  money_save(void);                      // 0 — записать не удалось
+void money_add(const Expense *e);
+void money_remove(int index);
+int  money_count(void);
+const Expense *money_get(int index);
+double money_month(int month, int year, double by_category[CATEGORIES]);   // итог месяца
+
+// chart.c — столбики по категориям на холсте
+void chart_set(const double by_category[CATEGORIES]);
+void chart_paint(WuiControl *c, GpGraphics *g, float width, float height, void *user);
+```
+
+Запись о трате — структура `Expense`: дата тремя числами, сумма, номер категории и заметка. Заметка лежит прямо в структуре массивом из 120 байт, а не указателем: так записи можно копировать присваиванием и хранить массивом без отдельного освобождения строк. 120 байт — около шестидесяти русских букв в UTF-8, для заметки достаточно.
+
+Категории — массив строк, объявленный здесь как `extern`, а определённый в `data.c`. Номер категории в записи и номер пункта в раскрывающемся списке совпадают: список заполняется из этого же массива.
+
+`money.h` включает `wui.h` ради одного типа: функция рисования холста `chart_paint` получает `GpGraphics *` и `WuiControl *`. `#pragma once` не даёт включить заголовок дважды.
+
+## Шаг 2. Записи и файл
+
+```
+// файл: data.c
+// Записи о расходах: массив в памяти и файл CSV — строка на запись:
+// день.месяц.год;сумма;категория;заметка
+#include "money.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+const char *category_names[CATEGORIES] = { "Еда", "Дом", "Транспорт", "Здоровье",
+                                           "Одежда", "Связь", "Отдых", "Прочее" };
+
+static Expense *g_items;
+static int g_count, g_cap;
+static char g_path[1024];
+
+static int category_of(const char *name)
+{
+    for (int i = 0; i < CATEGORIES; i++)
+        if (strcmp(category_names[i], name) == 0) return i;
+    return CATEGORIES - 1;                  // незнакомая — в «Прочее»
+}
+
+void money_add(const Expense *e)
+{
+    if (g_count == g_cap) {
+        g_cap = g_cap ? g_cap * 2 : 64;
+        g_items = realloc(g_items, sizeof(Expense) * (size_t)g_cap);
+    }
+    g_items[g_count++] = *e;
+}
+
+void money_remove(int index)
+{
+    if (index < 0 || index >= g_count) return;
+    memmove(g_items + index, g_items + index + 1, sizeof(Expense) * (size_t)(g_count - index - 1));
+    g_count--;
+}
+
+int money_count(void) { return g_count; }
+const Expense *money_get(int index) { return &g_items[index]; }
+
+int money_open(const char *path)
+{
+    snprintf(g_path, sizeof g_path, "%s", path);
+    FILE *f = fopen(g_path, "r");
+    if (!f) return 0;
+    char line[512], category[64];
+    while (fgets(line, sizeof line, f)) {
+        Expense e = { 0 };
+        int used = 0;
+        if (sscanf(line, "%d.%d.%d;%lf;%63[^;];%n", &e.day, &e.month, &e.year, &e.sum, category, &used) < 5
+            || !used)
+            continue;                       // испорченная строка — пропустить
+        e.category = category_of(category);
+        snprintf(e.note, sizeof e.note, "%s", line + used);
+        e.note[strcspn(e.note, "\r\n")] = 0;
+        money_add(&e);
+    }
+    fclose(f);
+    return 1;
+}
+
+int money_save(void)
+{
+    FILE *f = fopen(g_path, "w");
+    if (!f) return 0;
+    for (int i = 0; i < g_count; i++) {
+        const Expense *e = &g_items[i];
+        fprintf(f, "%02d.%02d.%d;%.2f;%s;%s\n", e->day, e->month, e->year, e->sum,
+                category_names[e->category], e->note);
+    }
+    return fclose(f) == 0;
+}
+
+double money_month(int month, int year, double by_category[CATEGORIES])
+{
+    double total = 0;
+    for (int i = 0; i < CATEGORIES; i++) by_category[i] = 0;
+    for (int i = 0; i < g_count; i++)
+        if (g_items[i].month == month && g_items[i].year == year) {
+            by_category[g_items[i].category] += g_items[i].sum;
+            total += g_items[i].sum;
+        }
+    return total;
+}
+```
+
+Записи хранятся в массиве, который растёт удвоением через `realloc`: 64, 128, 256 записей и так далее. Удаление сдвигает хвост массива на место удалённой записи `memmove`. Все переменные файла — `static`: снаружи их не видно, и другие файлы работают с записями только через функции из `money.h`.
+
+Файл — текст CSV, строка на запись, поля через точку с запятой:
+
+```
+03.11.2026;37.20;Еда;рынок: овощи и фрукты
+```
+
+Такой файл открывается в Блокноте и в любой таблице, его легко поправить руками или разобрать другой программой. Категория пишется словом, а не номером: если когда-нибудь порядок категорий изменится, старые записи не перепутаются. Сумма записывается с точкой — `printf` в WinCC всегда ставит точку, и `sscanf` её же читает.
+
+Чтение разбирает строку одним `sscanf`. Шаблон `%63[^;]` читает категорию до точки с запятой, не больше 63 знаков, а `%n` ничего не читает, но записывает, сколько знаков строки уже пройдено: всё, что после, — заметка. Так в заметке может быть и точка с запятой. Если строка испорчена — не дала пяти полей или не дошла до точки с запятой после категории, и `%n` не сработал, — она пропускается: одна плохая строка не должна губить весь файл.
+
+Сохранение переписывает файл целиком. Для сотен и тысяч записей это мгновенно, а файл всегда цел и полон. `money_save` возвращает 0, если файл не открылся или не записался до конца, — окно скажет об этом пользователю.
+
+`money_month` — единственный расчёт: проходит все записи, складывает суммы нужного месяца в итог и по категориям.
+
+## Шаг 3. Окно
+
+```
+// файл: main.c
+// Расходы — учёт трат по категориям за месяц. Окно на WUI, записи — в файле CSV.
+// сборка: wcc main.c data.c chart.c -o Расходы.exe
+#include "money.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+static const char *month_names[12] = { "январь", "февраль", "март", "апрель", "май", "июнь", "июль",
+                                       "август", "сентябрь", "октябрь", "ноябрь", "декабрь" };
+
+static WuiControl *g_win, *g_sum, *g_category, *g_note, *g_list, *g_remove, *g_count;
+static WuiControl *g_month, *g_total, *g_chart;
+static int g_shown[4096], g_shown_count;    // строка списка → номер записи
+static int g_m, g_y;                        // месяц, который показан
+
+static struct tm today(void)
+{
+    time_t now = time(0);
+    return *localtime(&now);
+}
+
+// показать месяц: список (новые сверху), итог, столбики
+static void refresh(void)
+{
+    char line[300];
+    double by_category[CATEGORIES];
+    snprintf(line, sizeof line, "%s %d", month_names[g_m - 1], g_y);
+    wui_text(g_month, line);
+
+    wui_list_clear(g_list);
+    g_shown_count = 0;
+    for (int i = money_count() - 1; i >= 0 && g_shown_count < 4096; i--) {
+        const Expense *e = money_get(i);
+        if (e->month != g_m || e->year != g_y) continue;
+        snprintf(line, sizeof line, "%02d.%02d   %.2f   %s%s%s", e->day, e->month, e->sum,
+                 category_names[e->category], *e->note ? " — " : "", e->note);
+        wui_list_add(g_list, line);
+        g_shown[g_shown_count++] = i;
+    }
+
+    double total = money_month(g_m, g_y, by_category);
+    chart_set(by_category);
+    wui_redraw(g_chart);
+    snprintf(line, sizeof line, "%.2f", total);
+    wui_text(g_total, line);
+    snprintf(line, sizeof line, "Записей за месяц: %d", g_shown_count);
+    wui_text(g_count, line);
+    wui_enable(g_remove, 0);                // после пересборки списка ничего не выбрано
+}
+
+static void save_or_warn(void)
+{
+    if (!money_save())
+        wui_message(g_win, "Не сохранено", "Файл с записями не удалось записать. Проверьте, не открыт ли он "
+                    "в другой программе.", WUI_MSG_OK);
+}
+
+static void on_add(WuiControl *c, void *user)
+{
+    (void)c; (void)user;
+    char text[64], *end;
+    snprintf(text, sizeof text, "%s", wui_get_text(g_sum));
+    for (char *p = text; *p; p++) if (*p == ',') *p = '.';     // «45,50» — тоже число
+    double sum = strtod(text, &end);
+    if (!*text || *end || sum <= 0) {
+        wui_toast(g_win, "Сумма — число больше нуля, например 45.50");
+        wui_focus(g_sum);
+        return;
+    }
+    struct tm t = today();
+    Expense e = { t.tm_mday, t.tm_mon + 1, t.tm_year + 1900, sum, (int)wui_get_value(g_category) };
+    snprintf(e.note, sizeof e.note, "%s", wui_get_text(g_note));
+    money_add(&e);
+    save_or_warn();
+    wui_text(g_sum, "");
+    wui_text(g_note, "");
+    wui_focus(g_sum);
+    g_m = e.month;                          // новая запись — в текущем месяце: показать его
+    g_y = e.year;
+    refresh();
+    wui_toast(g_win, "Записано");
+}
+
+static void on_select(WuiControl *list, void *user)
+{
+    (void)user;
+    wui_enable(g_remove, wui_get_value(list) >= 0);
+}
+
+static void on_remove(WuiControl *c, void *user)
+{
+    (void)c; (void)user;
+    int row = (int)wui_get_value(g_list);
+    if (row < 0) return;
+    char question[400];
+    snprintf(question, sizeof question, "Удалить запись «%s»?", wui_get_text(g_list));
+    if (!wui_message(g_win, "Удаление", question, WUI_MSG_YES_NO)) return;
+    money_remove(g_shown[row]);
+    save_or_warn();
+    refresh();
+}
+
+static void on_month(WuiControl *c, void *user)
+{
+    (void)c;
+    g_m += (int)(INT_PTR)user;              // −1 или +1
+    if (g_m < 1) { g_m = 12; g_y--; }
+    if (g_m > 12) { g_m = 1; g_y++; }
+    refresh();
+}
+
+static WuiControl *build_left(WuiControl *parent)
+{
+    WuiControl *left = wui_column(parent);
+    wui_stretch(left, 1);
+    wui_gap(left, 12);
+
+    WuiControl *card = wui_card(left, "Новая запись");
+    WuiControl *row = wui_row(card);
+    g_sum = wui_textbox(row, "Сумма");
+    wui_size(g_sum, 110, 0);
+    g_category = wui_combo(row);
+    for (int i = 0; i < CATEGORIES; i++) wui_combo_add(g_category, category_names[i]);
+    g_note = wui_textbox(row, "Заметка");
+    wui_stretch(g_note, 1);
+    WuiControl *add = wui_button(card, "Добавить", WUI_BUTTON_ACCENT);
+    wui_button_icon(add, WUI_ICON_PLUS);
+    wui_align(add, WUI_ALIGN_END);          // под строкой, у правого края
+
+    g_list = wui_list(left);
+    wui_stretch(g_list, 1);
+    WuiControl *bottom = wui_row(left);
+    g_count = wui_label(bottom, "", WUI_LABEL_DIM);
+    wui_spacer(bottom);
+    g_remove = wui_button(bottom, "Удалить", WUI_BUTTON_DANGER);
+    wui_button_icon(g_remove, WUI_ICON_TRASH);
+
+    wui_on_click(add, on_add, 0);
+    wui_on_click(g_sum, on_add, 0);         // Enter в любом поле — «Добавить»
+    wui_on_click(g_note, on_add, 0);
+    wui_on_change(g_list, on_select, 0);
+    wui_on_click(g_remove, on_remove, 0);
+    return left;
+}
+
+static WuiControl *build_right(WuiControl *parent)
+{
+    WuiControl *right = wui_card(parent, 0);
+    wui_size(right, 300, 0);
+
+    WuiControl *nav = wui_row(right);
+    WuiControl *prev = wui_button(nav, "", WUI_BUTTON_GHOST);
+    wui_button_icon(prev, WUI_ICON_CHEVRON_LEFT);
+    wui_spacer(nav);
+    g_month = wui_label(nav, "", WUI_LABEL_TITLE);
+    wui_spacer(nav);
+    WuiControl *next = wui_button(nav, "", WUI_BUTTON_GHOST);
+    wui_button_icon(next, WUI_ICON_CHEVRON_RIGHT);
+
+    wui_label(right, "Потрачено за месяц", WUI_LABEL_DIM);
+    g_total = wui_label(right, "", WUI_LABEL_BIG);
+    wui_separator(right);
+    g_chart = wui_canvas(right, chart_paint, 0);
+    wui_stretch(g_chart, 1);                // вся оставшаяся высота карточки
+
+    wui_on_click(prev, on_month, (void *)-1);
+    wui_on_click(next, on_month, (void *)1);
+    return right;
+}
+
+int main(int argc, char **argv)
+{
+    // файл с записями: из командной строки или %APPDATA%\Расходы\расходы.csv
+    char path[1024];
+    if (argc > 1) snprintf(path, sizeof path, "%s", argv[1]);
+    else {
+        const char *appdata = getenv("APPDATA");
+        snprintf(path, sizeof path, "%s\\Расходы", appdata ? appdata : ".");
+        CreateDirectoryA(path, 0);
+        strcat(path, "\\расходы.csv");
+    }
+    money_open(path);
+    struct tm t = today();
+    g_m = t.tm_mon + 1;
+    g_y = t.tm_year + 1900;
+
+    g_win = wui_window("Расходы", 900, 620, "Expenses");
+    wui_window_logo(g_win, WUI_ICON_PIE_CHART);
+    wui_window_min_size(g_win, 780, 560);
+    wui_theme_picker(wui_titlebar(g_win));
+
+    WuiControl *body = wui_row(wui_content(g_win));
+    wui_stretch(body, 1);
+    wui_gap(body, 16);
+    build_left(body);
+    build_right(body);
+
+    refresh();
+    wui_focus(g_sum);
+    return wui_run();
+}
+```
+
+`main` сначала решает, где лежит файл. Если программе передали путь в командной строке, она работает с ним — так можно вести две книги расходов, домашнюю и рабочую, ярлыками с разными файлами. Иначе файл лежит в `%APPDATA%\Расходы\расходы.csv`, в папке, которую Windows отводит для данных программ пользователя. `getenv` в WinCC отдаёт значение в UTF-8, а `CreateDirectoryA` и `fopen` принимают пути в UTF-8, так что кириллица в пути не мешает (глава 7). Если папка уже есть, `CreateDirectoryA` просто ничего не делает.
+
+Окно строится двумя функциями, по одной на каждую половину. Тело окна — строка с долей 1, чтобы занять всю высоту под заголовком. Левая половина — столбец с долей 1: она забирает всю ширину, которую не заняла правая карточка шириной 300 точек. В левом столбце карточка «Новая запись» по содержимому, список с долей 1 — на всю оставшуюся высоту, и строка с числом записей и кнопкой «Удалить», прижатой вправо пустым местом.
+
+В строке новой записи поле суммы — постоянной ширины, 110 точек, раскрывающийся список — по самому длинному названию категории, поле заметки — с долей 1: при любой ширине окна оно забирает всё, что остаётся. Кнопка «Добавить» стоит не в строке, а под ней, у правого края карточки (`WUI_ALIGN_END`); почему — сказано в шаге 7.
+
+Правая карточка — столбец. Название месяца стоит между двумя пустыми местами, и потому всегда посередине, между стрелками; стрелки — тихие кнопки из одного значка. Под итогом — черта и холст с долей 1: он забирает всю оставшуюся высоту карточки.
+
+`wui_window_min_size(g_win, 780, 560)` не даёт сжать окно так, что правая карточка и поля перестанут помещаться. Наименьший размер подобран по самому окну: в нём всё ещё видны строка новой записи, несколько строк списка и все восемь столбиков.
+
+Последнее перед `wui_run` — `wui_focus(g_sum)`: окно ещё не показано, но фокус уже стоит в поле суммы, и программа открывается готовой к вводу — можно сразу набирать число.
+
+## Шаг 4. События
+
+Обработчиков четыре, и те, что меняют записи, устроены одинаково: поменять данные, сохранить, перерисовать окно из данных. Перерисовку делает одна функция — `refresh`. Она не помнит, что было на экране, и не правит его по кусочкам: она очищает список и заполняет его заново, пересчитывает итог, отдаёт числа холсту, обновляет надписи. Так невозможно, чтобы окно показывало одно, а в данных было другое.
+
+Список показывает не все записи, а только записи выбранного месяца, и в обратном порядке — свежие сверху. Поэтому номер строки в списке не равен номеру записи в массиве. Соответствие хранит массив `g_shown`: `refresh` записывает в него номер записи для каждой строки, а `on_remove` по номеру выбранной строки находит запись. Без этой таблицы «Удалить» удаляло бы не то.
+
+`on_add` привязан к кнопке и к обоим полям: Enter в поле суммы или заметки добавляет запись так же, как кнопка. Текст суммы копируется в свой массив — его нужно править, а строку из `wui_get_text` менять нельзя. Запятая заменяется точкой: пользователь привык писать «45,50». Если в поле не число или число не больше нуля, всплывающая строка объясняет, что нужно, а курсор возвращается в поле суммы. Новая запись получает сегодняшнюю дату, сохраняется, поля очищаются, и окно переключается на текущий месяц — иначе запись, добавленная при открытом прошлом месяце, «пропала» бы с экрана.
+
+`on_select` включает «Удалить», когда в списке есть выбор. `refresh` выключает её после каждой пересборки списка.
+
+`on_remove` спрашивает подтверждения через `wui_message` и показывает в вопросе саму запись: «Удалить запись „03.11 37.20 Еда — рынок“?» — человек видит, что удаляет. Ответ «Нет», Esc или крестик возвращают 0, и ничего не происходит.
+
+`on_month` один на обе стрелки: шаг −1 или +1 пришёл данными обработчика. Переход через январь и декабрь меняет год.
+
+Если файл не записался — например, его держит открытым таблица, — `save_or_warn` показывает сообщение. Записи при этом остаются в памяти и попадут в файл при следующем удачном сохранении.
+
+## Шаг 5. Столбики
+
+```
+// файл: chart.c
+// Столбики по категориям: название, сумма и полоса — доля от самой большой траты.
+// Высота холста делится на восемь строк поровну.
+#include "money.h"
+#include <stdio.h>
+
+static double g_sums[CATEGORIES];
+
+void chart_set(const double by_category[CATEGORIES])
+{
+    for (int i = 0; i < CATEGORIES; i++) g_sums[i] = by_category[i];
+}
+
+// текст UTF-8 в рамку: GDI+ берёт строки UTF-16
+static void text(GpGraphics *g, const char *s, GpFont *font, GpBrush *brush, float x, float y, float w, int right)
+{
+    wchar_t ws[100];
+    MultiByteToWideChar(CP_UTF8, 0, s, -1, ws, 100);
+    GpStringFormat *format;
+    GdipCreateStringFormat(0, 0, &format);
+    GdipSetStringFormatAlign(format, right ? StringAlignmentFar : StringAlignmentNear);
+    RectF box = { x, y, w, 20 };
+    GdipDrawString(g, ws, -1, font, &box, format, brush);
+    GdipDeleteStringFormat(format);
+}
+
+void chart_paint(WuiControl *c, GpGraphics *g, float width, float height, void *user)
+{
+    (void)c; (void)user;
+    double most = 0;
+    for (int i = 0; i < CATEGORIES; i++) if (g_sums[i] > most) most = g_sums[i];
+
+    GpFontFamily *family;
+    GpFont *font;
+    GpSolidFill *ink, *dim, *track, *bar;
+    GdipCreateFontFamilyFromName(L"Segoe UI", NULL, &family);
+    GdipCreateFont(family, 13, FontStyleRegular, UnitPixel, &font);
+    GdipCreateSolidFill(wui_argb(WUI_TEXT), &ink);
+    GdipCreateSolidFill(wui_argb(WUI_TEXT_DIM), &dim);
+    GdipCreateSolidFill((wui_argb(WUI_TEXT_DIM) & 0x00FFFFFF) | 0x30000000, &track);
+    GdipCreateSolidFill(wui_argb(WUI_ACCENT), &bar);
+
+    float step = height / CATEGORIES, y = (step - 27) / 2;    // строка: текст 20 точек и полоса 6
+    for (int i = 0; i < CATEGORIES; i++, y += step) {
+        char sum[32];
+        snprintf(sum, sizeof sum, "%.2f", g_sums[i]);
+        text(g, category_names[i], font, g_sums[i] > 0 ? ink : dim, 0, y, width, 0);
+        text(g, sum, font, g_sums[i] > 0 ? ink : dim, 0, y, width, 1);
+        GdipFillRectangle(g, track, 0, y + 21, width, 6);
+        if (most > 0) GdipFillRectangle(g, bar, 0, y + 21, (float)(width * g_sums[i] / most), 6);
+    }
+    GdipDeleteBrush(bar);
+    GdipDeleteBrush(track);
+    GdipDeleteBrush(dim);
+    GdipDeleteBrush(ink);
+    GdipDeleteFont(font);
+    GdipDeleteFontFamily(family);
+}
+```
+
+Холст делит свою высоту на восемь равных строк: слева название категории, справа сумма, под ними дорожка во всю ширину и полоса цвета акцента. Длина полосы — доля самой большой траты месяца: самая большая категория всегда во всю ширину, остальные — в сравнении с ней. Так видно главное — на что ушло больше всего, — а точные числа стоят справа. Категории без трат пишутся бледным цветом.
+
+Все цвета — цвета темы, взятые в момент рисования: текст, бледный текст, акцент и бледный текст с непрозрачностью 0x30 для дорожки. Поэтому столбики выглядят родными и в «Стекле», и в «Пергаменте», и в «Терминале», а при смене темы холст перерисовывается сам.
+
+GDI+ берёт строки в UTF-16, а у программы они в UTF-8 — функция `text` переводит их `MultiByteToWideChar` и рисует в рамке с выравниванием влево или вправо. Холст не хранит своих данных, кроме восьми сумм: `chart_set` получает их из `refresh`, а `wui_redraw` там же просит перерисовку.
+
+## Шаг 6. Сборка
+
+```
+wcc main.c data.c chart.c -o Расходы.exe
+Готово: Расходы.exe — оконная программа, 1134592 байт, 3875 мс
+```
+
+Программа — один файл в 1,1 МБ, которому нужна только Windows. Её можно положить куда угодно и отдать как есть; данные она найдёт в `%APPDATA%` или в файле из командной строки, тему — в `%APPDATA%\ThemeLibrary\Expenses.theme`. Кнопка «Собрать» окна WinCC собирает один файл — тот, что открыт; программу из нескольких файлов собирают командой wcc в консоли, из папки, где лежат все четыре (глава 4).
+
+## Шаг 7. Проверка
+
+Окно с записями нескольких дней — вот как программа выглядит в работе.
+
+@ 17-расходы.png | «Расходы» в теме «Изумруд и золото»: новая запись, траты ноября, итог и столбики по категориям
+
+@ 17-расходы-доска.png | Та же программа в теме «Школьная доска»: столбики взяли цвета темы
+
+Перед тем как отдать программу, стоит пройти её руками по замыслу из начала главы — каждый пункт:
+
+1. Записать трату с суммой через запятую — «45,50» — и через Enter в поле заметки.
+2. Нажать «Добавить» с пустой суммой, с суммой «абв» и с нулём: должна появиться подсказка, запись — нет.
+3. Выбрать запись, нажать «Удалить», ответить «Нет», затем «Да».
+4. Пролистать на прошлый месяц и обратно; перейти через январь.
+5. Добавить запись, открыв прошлый месяц: окно должно перейти на текущий.
+6. Закрыть программу, открыть снова: записи и тема на месте.
+7. Открыть файл записей в программе, которая держит его занятым, например в Excel, и добавить запись: должно появиться сообщение, что файл не сохранён.
+8. Сменить несколько тем и сжать окно до наименьшего размера: ничего не должно налезать.
+
+Последний пункт — не придирка. Первый вариант этой программы его не прошёл. Холст стоял с постоянной высотой — восемь строк по 40 точек, — и в теме «Школьная доска», где шрифты крупнее, правая карточка не уместила его: нижние столбики вылезли за край окна. А кнопка «Добавить» стояла в одной строке с полями, и при наименьшей ширине окна полю заметки не осталось места вовсе. Оба места исправлены правилами раскладки: холст получил долю и сам делит свою высоту на восемь строк, а кнопка ушла под строку полей.
+
+В WUI тема меняет шрифты и поля, и раскладка, которая хороша в одной теме, в другой может стать теснее. Если что-то налезает, лечат правилами раскладки (глава 14): долей вместо постоянной ширины, переносом вместо строки, наименьшим размером окна.
+
+## Что можно добавить
+
+Программа сделана так, чтобы её было легко растить. Несколько направлений, каждое — в одном-двух файлах:
+
+- отчёт за год — вкладка с двенадцатью итогами месяцев и холстом-графиком; данные уже есть в `money_month`;
+- свои категории — массив `category_names` читается из второго файла, раскрывающийся список заполняется из него же;
+- поиск по заметкам — поле над списком, `on_change` которого вызывает `refresh` с фильтром;
+- выбор даты — три раскрывающихся списка или поле «день.месяц» вместо сегодняшней даты;
+- выгрузка — кнопка, которая копирует отчёт месяца в буфер обмена, как в генераторе паролей главы 15.
+
+## Итог
+
+Программа на WUI начинается не с окна, а с замысла: что человек делает и что должен видеть. Из замысла получаются и раскладка окна, и список того, чего в программе не будет. Код делится на файлы по смыслу: данные отдельно от окна, рисование отдельно от событий; собираются они одной командой wcc.
+
+Связь окна с данными держится на одном правиле: обработчик меняет данные, сохраняет их и зовёт одну функцию, которая строит окно из данных заново. Списки при этом заполняются целиком, а если строки списка не совпадают с записями по номерам, соответствие хранится явно. Своё рисование берёт цвета темы, и программа выглядит своей в любой из шестидесяти одной. Справочник всех функций и констант WUI — в приложении Г.

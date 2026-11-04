@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Выгрузка тем ThemeLibrary в Си: lib\wui\themes.c и lib\wui\style.h -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <UseWPF>true</UseWPF>
+    <OutputPath>bin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="ThemeLibrary">
+      <HintPath>..\..\..\Libraries\ThemeLibrary\ThemeLibrary.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>

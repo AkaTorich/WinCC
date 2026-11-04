@@ -1,0 +1,8 @@
+// The second source of static_units.c: the same static names, its own.
+static int counter = 100;
+static int helper(int x) { return x + counter; }
+static const char *tag(void) { return "b"; }
+
+int other_helper(int x) { return helper(x); }
+const char *other_tag(void) { return tag(); }
+int shared_value(void) { return counter + 10; }

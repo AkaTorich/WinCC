@@ -1,0 +1,44 @@
+// The second source of units.c: what units.c defined is not here.
+#include "units_guard.h"
+#include "units_once.h"
+#include "units_guard.h"            // the guard still works inside one source
+
+typedef double Num;
+struct Box { char c[4]; };
+enum { RED = 9 };
+extern int shared_total;
+
+static int limit(void) { return 5; }
+
+int b_sees_a(void)
+{
+#ifdef ONLY_IN_A
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int b_limit(void) { return limit(); }
+int b_guard(void) { struct Pt p = { HDR_VERSION, 0 }; return p.x == 3 ? hdr_bump() : -1; }
+int b_once(void) { return once_id(); }
+double b_num(void) { Num n = 2.5; return n; }
+int b_red(void) { return RED; }
+
+int b_builtin(void)
+{
+#if defined(__DYNASTYOS__) || defined(__WINCC__)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+int b_box(void)
+{
+    struct Box b;
+    b.c[0] = 7;
+    return sizeof(struct Box) == 4 ? b.c[0] : -1;
+}
+
+int b_total(void) { return ++shared_total; }

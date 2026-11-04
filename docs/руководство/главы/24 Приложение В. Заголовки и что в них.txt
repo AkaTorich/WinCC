@@ -1,0 +1,359 @@
+# Приложение В. Заголовки и что в них
+Все заголовки, которые программа WinCC может подключить: стандартные заголовки Си, встроенные в компилятор, и файлы папки `include` — остальная библиотека Си (потоки, атомарные операции, комплексные числа, консоль, файлы по номерам, встроенные команды процессора), Windows, GDI+, сеть, WUI. Для каждого сказано, что в нём, сколько функций и из какой DLL они берутся. Функции заголовков Windows перечислены поимённо: если нужной здесь нет, её объявляют в программе сами (глава 11).
+
+## Где wcc ищет заголовки
+
+Стандартные заголовки Си встроены в сам `wcc.exe` и файлами не существуют. Остальные лежат в папке `include` рядом с `wcc.exe`; `sys/stat.h` и `sys/types.h` — в её папке `sys`, части `windows.h` — в папке `win`.
+
+:= Как подключён | Где ищется, по порядку
+: `#include "имя.h"` | папка файла, который подключает; встроенные стандартные; путь как написан — от папки, из которой запущен wcc; папки из ключей `-I`; папка `include` WinCC
+: `#include <имя.h>` | встроенные стандартные; папки из ключей `-I`; папка `include` WinCC; последним — путь как написан, от папки, из которой запущен wcc
+
+Папки `-I` просматриваются раньше папки `include`, поэтому своим `-I` можно подменить любой заголовок WinCC, кроме встроенных стандартных. Текущая папка для `<имя.h>` — последняя: свой `windows.h`, случайно лежащий в папке, из которой запущен wcc, не подменяет заголовок WinCC. Свой файл с таким именем берётся только через `#include "windows.h"` — если лежит рядом с исходником. Повторное подключение отсекают `#pragma once` и обычные защитные `#ifndef`; глубина вложенных `#include` — до 32.
+
+Имя заголовка может прийти из макроса: `#define H <stdio.h>` и затем `#include H`. Есть ли заголовок, проверяют в `#if` словом `__has_include(<имя.h>)` или `__has_include("имя.h")`; `__has_include_next` тоже понимается.
+
+## Стандартные заголовки Си
+
+Встроено 25 заголовков. Подробно о библиотеке — глава 6.
+
+:= Заголовок | Что в нём | Функций
+: `stddef.h` | `size_t`, `ptrdiff_t`, `NULL`, `offsetof`, `wchar_t`, `max_align_t` | —
+: `stdarg.h` | `va_list`, `va_start`, `va_arg`, `va_end`, `va_copy` | —
+: `stdbool.h` | `bool`, `true`, `false` | —
+: `stdalign.h` | `alignas`, `alignof` | —
+: `stdnoreturn.h` | `noreturn` | —
+: `iso646.h` | `and`, `or`, `not` и другие слова вместо знаков | —
+: `stdint.h` | `int8_t`…`uint64_t`, `intptr_t`, `intmax_t`, их пределы | —
+: `inttypes.h` | `PRId64`, `SCNu32` и другие форматы, `strtoimax`, `imaxdiv` | 6
+: `limits.h` | `INT_MAX`, `CHAR_BIT`, `LONG_MAX` и другие пределы | —
+: `float.h` | `DBL_MAX`, `FLT_EPSILON` и другие пределы | —
+: `errno.h` | `errno` — своя у каждого потока; коды ошибок `EPERM`, `ENOENT`, `ESRCH`, `EINTR`, `EIO`, `ENXIO`, `E2BIG`, `ENOEXEC`, `EBADF`, `ECHILD`, `EAGAIN`, `ENOMEM`, `EACCES`, `EBUSY`, `EEXIST`, `EXDEV`, `ENODEV`, `ENOTDIR`, `EISDIR`, `EINVAL`, `ENFILE`, `EMFILE`, `ENOTTY`, `EFBIG`, `ENOSPC`, `ESPIPE`, `EROFS`, `EMLINK`, `EPIPE`, `EDOM`, `ERANGE`, `EDEADLK`, `ENAMETOOLONG`, `ENOLCK`, `ENOSYS`, `ENOTEMPTY`, `EILSEQ`, `ETIMEDOUT` | —
+: `assert.h` | `assert`; с `NDEBUG` — пустой | —
+: `stdio.h` | `printf` и `scanf` со всеми вариантами, файлы `FILE`, `fopen`…`fclose`, `setvbuf` (`_IOFBF`, `_IOLBF`, `_IONBF`), `remove`, `rename`, `tmpfile`; номер файла `_fileno` и `fileno`, `FILE` по номеру `_fdopen` и `fdopen`, места в файле за 2 ГБ `_fseeki64` и `_ftelli64`; имена Microsoft `_snprintf`, `_vsnprintf` | 51
+: `stdlib.h` | память, числа из строк, `qsort`, `bsearch`, `rand`, `exit`, `atexit`, `getenv`, `system`, многобайтовые строки | 39
+: `string.h` | строки и память, а также `strdup`, `strndup`, `strtok_r`, `strcasecmp`, `stpcpy`, `memccpy`; имена Microsoft `_strdup`, `_strndup`, `_stricmp`, `_strnicmp`, `_strcmpi`, `stricmp`, `strnicmp` | 30
+: `strings.h` | `strcasecmp`, `strncasecmp` | 2
+: `ctype.h` | `isalpha`, `isdigit`… `toupper`, `tolower` | 14
+: `math.h` | функции для `double`, многие — и для `float` и `long double`, `NAN`, `INFINITY`, `isnan`, `fpclassify` | 101
+: `time.h` | `time`, `clock`, `mktime`, `localtime`, `gmtime`, `strftime`, `timespec_get` | 12
+: `setjmp.h` | `jmp_buf`, `setjmp`, `longjmp` | 2
+: `signal.h` | `signal`, `raise`, `SIGINT`, `SIGFPE`, `SIGSEGV`… | 2
+: `locale.h` | `setlocale`, `localeconv` | 2
+: `wchar.h` | строки `wchar_t`, широкий ввод-вывод `wprintf`, `fgetws`…, переводы UTF-8 ↔ UTF-16 | 61
+: `wctype.h` | `iswalpha`, `towupper` и другие для `wchar_t` | 18
+: `uchar.h` | `char16_t`, `char32_t`, `mbrtoc16`, `c16rtomb`, `mbrtoc32`, `c32rtomb` | 4
+
+Имена Microsoft в `stdio.h` и `string.h` — макросы на те же функции: `_strdup` — это `strdup`, `_stricmp`, `_strcmpi` и `stricmp` — `strcasecmp`, `_strnicmp` и `strnicmp` — `strncasecmp`, `_snprintf` — `snprintf`. В число функций они не входят. `_fileno`, `_fdopen`, `_fseeki64` и `_ftelli64` — настоящие функции и в число входят. `strtok` помнит своё место отдельно в каждом потоке, как и `errno`.
+
+Стандартных заголовков в духе C11, которых нет среди встроенных, — `threads.h`, `stdatomic.h`, `complex.h`, `fenv.h`, `tgmath.h` — WinCC даёт файлами папки `include`; они описаны в следующем разделе.
+
+## Библиотека Си в папке include
+
+Эти заголовки — обычные файлы папки `include`. Их функции — из библиотеки WinCC: как и вся она, в программу попадает только то, что программа зовёт.
+
+:= Заголовок | Что в нём | Функций
+: `threads.h` | потоки C11: `thrd_create`, `thrd_join`, `thrd_detach`, `thrd_sleep`, `thrd_yield`, `thrd_exit`, `thrd_current`, `thrd_equal`; замки `mtx_…` (`mtx_plain`, `mtx_timed`, `mtx_recursive`); условные переменные `cnd_…`; данные потока `tss_…` с деструкторами; `call_once`; `thread_local` | 25
+: `stdatomic.h` | `atomic_int` и другие атомарные типы, `atomic_load`, `atomic_store`, `atomic_exchange`, `atomic_compare_exchange_strong` и `_weak`, `atomic_fetch_add`, `_sub`, `_or`, `_and`, `_xor`, их варианты `_explicit`, `atomic_flag`, `atomic_thread_fence` | —
+: `complex.h` | комплексные числа в духе Microsoft: структуры `_Dcomplex` и `_Fcomplex`, построение `_Cbuild` и `_FCbuild`, `creal`, `cimag`, `cabs`, `carg`, `conj`, `cproj`, `cexp`, `clog`, `clog10`, `csqrt`, `cpow`, `csin`…`catanh`, умножение `_Cmulcc` и `_Cmulcr`; свои сложение, вычитание и деление `_Caddcc`, `_Csubcc`, `_Cdivcc` | 43
+: `fenv.h` | округление `fegetround` и `fesetround` (`FE_TONEAREST`, `FE_DOWNWARD`, `FE_UPWARD`, `FE_TOWARDZERO`); флаги `FE_DIVBYZERO`, `FE_OVERFLOW` и другие, `feclearexcept`, `fetestexcept`, `feraiseexcept`; `fegetenv`, `fesetenv`, `feholdexcept`, `feupdateenv` | 11
+: `tgmath.h` | одно имя для `float` и `double`: `sqrt(x)` от `float` зовёт `sqrtf`; сделан на `_Generic`, только для вещественных чисел | —
+: `conio.h` | консоль без строк: `_getch`, `_getche`, `_getwch`, `_ungetch`, `_kbhit`, `_putch`, `_putwch`, `_cputs`, `_cprintf` и старые имена без подчёркивания | 16
+: `io.h` | файлы по номерам: `_open`, `_close`, `_read`, `_write`, `_lseek`, `_lseeki64`, `_tell`, `_eof`, `_isatty`, `_dup`, `_dup2`, `_setmode`, `_filelength`, `_chsize`, `_commit`, `_get_osfhandle`, `_open_osfhandle`, `_access`, `_unlink`, `_umask`; файлы папки `_findfirst`, `_findnext`, `_findclose`; имена POSIX `open`, `read`, `write`… | 44
+: `fcntl.h` | как открывать файл в `_open`: `_O_RDONLY`, `_O_WRONLY`, `_O_RDWR`, `_O_APPEND`, `_O_CREAT`, `_O_TRUNC`, `_O_EXCL`, `_O_TEXT`, `_O_BINARY` и имена без подчёркивания | —
+: `direct.h` | папки: `_mkdir`, `_rmdir`, `_chdir`, `_getcwd`, `_getdrive`, `_chdrive` и имена без подчёркивания | 10
+: `sys/stat.h` | `struct stat` с 64-битным размером и временем, `stat`, `fstat`, `_stat64`, `S_ISDIR`, `S_ISREG` и флаги `S_IF…` | 9
+: `sys/types.h` | типы `dev_t`, `ino_t`, `off_t`, `mode_t`, `ssize_t`, `pid_t`, `time_t` | —
+: `process.h` | потоки `_beginthreadex`, `_beginthread`, `_endthreadex`; `_getpid`; запуск программ `_spawnv`, `_spawnvp`, `_spawnl`, `_spawnlp`, `_execv`, `_execvp`, `_execl`, `_execlp`, ожидание `_cwait`; режимы `_P_WAIT`, `_P_NOWAIT`, `_P_OVERLAY`, `_P_DETACH` | 19
+: `malloc.h` | память стека `_alloca`, `alloca`, `_malloca`, `_freea`; выровненная память `_aligned_malloc`, `_aligned_free`; `_msize`, `_expand`; подключает `stdlib.h` | 4
+: `intrin.h` | встроенные функции Microsoft — отдельные команды процессора: `__cpuid`, `__rdtsc`, `_BitScanForward`, `__popcnt`, `_byteswap_ulong`, `_rotl`, `_umul128`, `_InterlockedIncrement`, `__readgsqword`… | 10
+: `sal.h` | пометки параметров Microsoft `_In_`, `_Out_`, `_Inout_`… — все пустые; подключается из `windows.h` | —
+
+Почти всё в `stdatomic.h`, `tgmath.h` и `intrin.h` — макросы, поэтому функций у них ноль или мало. `alloca` и `_alloca` — слова самого компилятора: они работают и без `malloc.h`.
+
+### threads.h и stdatomic.h
+
+`thrd_create(&t, work, &data)` запускает функцию `int work(void *arg)` в новом потоке, `thrd_join(t, &result)` ждёт её и забирает результат. `mtx_lock` и `mtx_unlock` охраняют общие данные, `cnd_wait` ждёт сигнала `cnd_signal`. `tss_create` даёт ключ, под которым у каждого потока своё значение; деструктор вызывается при выходе потока. `thread_local` здесь — то же, что `_Thread_local`.
+
+В `stdatomic.h` атомарная переменная объявляется `atomic_int n;` или `_Atomic int n;`; `n += 5` и `n++` над ней — уже один неделимый шаг. Варианты `_explicit` принимают порядок памяти `memory_order_…`, а работают как самый строгий, `memory_order_seq_cst`.
+
+### complex.h
+
+Языкового `_Complex` в WinCC нет (определено `__STDC_NO_COMPLEX__`), поэтому комплексное число, как у Microsoft, — структура из двух частей. Число строят `_Cbuild(1, 2)`, части читают `creal` и `cimag`, перемножают `_Cmulcc`; знаки `+`, `-`, `*` к таким структурам не применяются. Сложение, вычитание и деление `_Caddcc`, `_Csubcc`, `_Cdivcc` у Microsoft нет — это добавки WinCC. Для `float` — `_Fcomplex`, `_FCbuild` и функции с `f` на конце: `crealf`, `cabsf`, `csqrtf`…
+
+### fenv.h
+
+Режим округления и флаги исключений хранятся сразу в двух местах процессора — в регистре SSE (им считаются `double` и `float`) и в x87; функции `fenv.h` меняют и читают оба вместе.
+
+### conio.h
+
+`_getch` возвращает нажатую клавишу сразу, без Enter и без показа на экране; `_getche` — то же с показом; `_kbhit` говорит, нажата ли клавиша, не дожидаясь её. Буква не из ASCII приходит из `_getch` байтами UTF-8. Стрелки и функциональные клавиши приходят двумя вызовами: сначала 0 или `0xE0`, потом скан-код (вверх 72, вниз 80, влево 75, вправо 77, F1 59).
+
+### io.h, fcntl.h, direct.h, sys/stat.h
+
+Имена файлов и папок в этих функциях — в UTF-8. Номера 0, 1 и 2 — стандартный ввод, вывод и ошибки. `_O_TEXT` в `_open` и `_setmode` меняет `\n` на `\r\n` при записи и обратно при чтении, `_O_BINARY` оставляет байты как есть. `_get_osfhandle` даёт дескриптор Windows `HANDLE` по номеру, `_open_osfhandle` — номер по дескриптору; `_fileno` и `_fdopen` из `stdio.h` связывают номер с `FILE`. `_getcwd` с нулевым буфером сам берёт память у `malloc` — её освобождают `free`. В `struct stat` размер `st_size` — `long long`, времена — `time_t`; `_stat64` и `_stati64` — другие имена той же структуры и функции.
+
+### process.h
+
+`_beginthreadex` запускает поток с функцией `unsigned work(void *arg)` и возвращает его дескриптор. `_spawnlp(_P_WAIT, "notepad", "notepad", "a.txt", NULL)` запускает программу, ждёт её и возвращает её код выхода; с `_P_NOWAIT` возвращает дескриптор сразу, дождаться можно `_cwait`. Буква `p` в имени — искать программу по `PATH`, `l` — аргументы списком до `NULL`, `v` — массивом. `_exec…` работает как режим `_P_OVERLAY`: текущая программа завершается с кодом выхода запущенной.
+
+### intrin.h
+
+Каждое имя, кроме `Interlocked…`, — макрос на несколько строк ассемблера, поэтому вызова функции за ним нет. `Interlocked…` — те же функции библиотеки WinCC, что и в `windows.h`.
+
+:= Группа | Имена
+: процессор | `__cpuid`, `__cpuidex`, `__rdtsc`, `__rdtscp`, `_xgetbv`, `__debugbreak`, `__nop`, `_mm_pause`, `_mm_mfence`, `_mm_lfence`, `_mm_sfence`, `__faststorefence`, `_ReadWriteBarrier`, `_ReadBarrier`, `_WriteBarrier`, `_mm_getcsr`, `_mm_setcsr`
+: адрес возврата и поток | `_ReturnAddress`, `_AddressOfReturnAddress`, `__readgsqword`, `__readgsdword`, `__readgsword`, `__readgsbyte`, `NtCurrentTeb`
+: биты | `_BitScanForward`, `_BitScanReverse`, `_BitScanForward64`, `_BitScanReverse64`, `__popcnt16`, `__popcnt`, `__popcnt64`, `__lzcnt16`, `__lzcnt`, `__lzcnt64`, `_lzcnt_u32`, `_lzcnt_u64`, `_tzcnt_u32`, `_tzcnt_u64`, `_bittest`, `_bittest64`, `_bittestandset`, `_bittestandreset`, `_bittestandcomplement` и их варианты `64`
+: байты и сдвиги | `_byteswap_ushort`, `_byteswap_ulong`, `_byteswap_uint64`, `_rotl8`, `_rotr8`, `_rotl16`, `_rotr16`, `_rotl`, `_rotr`, `_lrotl`, `_lrotr`, `_rotl64`, `_rotr64`
+: 128-битная арифметика | `_umul128`, `_mul128`, `__umulh`, `__mulh`, `_addcarry_u64`, `_addcarry_u32`, `_subborrow_u64`, `__shiftleft128`, `__shiftright128`
+: память | `__stosb`, `__stosd`, `__stosq`, `__movsb`, `__movsq`
+: атомарные | `InterlockedIncrement`…`InterlockedCompareExchange64` и имена с подчёркиванием, `_InterlockedAnd`, `_InterlockedOr`, `_InterlockedXor`, `_InterlockedAnd64`, `_InterlockedOr64`, `_InterlockedXor64`, `_InterlockedAnd8`, `_InterlockedOr8`,`_InterlockedExchangePointer`, `_InterlockedCompareExchangePointer`, `_InterlockedCompareExchange16`, `_InterlockedIncrement16`, `_InterlockedDecrement16`
+
+Встроенных функций SSE с типом `__m128` (`_mm_add_ps` и подобных) в `intrin.h` нет: такие вычисления пишут вставкой на ассемблере — команды SSE и AVX ассемблер WinCC понимает.
+
+## windows.h
+
+`windows.h` WinCC — один заголовок, разложенный на восемь файлов в папке `include\win`. Он сам подключает `stddef.h`, `stdarg.h`, `string.h`, `wchar.h` и `sal.h` и определяет имена `_WINDOWS_`, `_WINDEF_`, `_WINBASE_`, `_WINUSER_`, `_WINGDI_`, по которым чужой код проверяет, подключён ли `windows.h`.
+
+:= Файл | DLL | Функций | Что в нём
+: `win\types.h` | — | — | типы (`DWORD`, `HANDLE`, `HWND`, `LPSTR`…), `RECT`, `POINT`, `SYSTEMTIME`, `GUID`, макросы, коды ошибок
+: `win\kernel32.h` | kernel32, библиотека WinCC | 220 | процессы, потоки, файлы, память, время, кодировки, консоль, DLL; атомарные `Interlocked…` — из библиотеки WinCC
+: `win\user32.h` | user32 | 248 | окна, сообщения, элементы, меню, мышь, клавиатура, таймеры, буфер обмена
+: `win\gdi32.h` | gdi32, user32 | 105 | рисование GDI, текст, картинки, области; 11 из них — переходники WinCC
+: `win\comdlg32.h` | comdlg32 | 9 | диалоги «Открыть», «Сохранить», выбор цвета и шрифта
+: `win\shell32.h` | shell32 | 16 | открыть файл программой, перетаскивание, значок в трее, папки Windows
+: `win\advapi32.h` | advapi32 | 21 | реестр, имя пользователя
+: `win\except.h` | kernel32 | 13 | исключения: коды, `EXCEPTION_RECORD`, `CONTEXT`, `EXCEPTION_POINTERS`, `RaiseException`, обработчики всей программы
+: всего | | 632 |
+
+Строк `#define` в этих файлах 1475 — константы и макросы, из них 851 — в `user32.h`: сообщения `WM_`, стили `WS_` и `ES_`, коды клавиш `VK_`, флаги `MB_`, `SW_`, `MF_`.
+
+### Две кодировки
+
+У функций с текстом два варианта: `…A` (строки `char`) и `…W` (строки `wchar_t`, UTF-16). Обычное имя без буквы — макрос, который выбирает вариант.
+
+:= Что определено до windows.h | MessageBox — это | TEXT("…") и TCHAR
+: ничего | `MessageBoxA`, текст UTF-8 | `"…"`, `char`
+: `#define UNICODE` | `MessageBoxW`, текст UTF-16 | `L"…"`, `wchar_t`
+
+A-функции берут UTF-8, потому что в каждую программу вшит манифест с кодовой страницей UTF-8 (глава 7). Исключение — текст GDI, который манифест не слушает: для него `win\gdi32.h` направляет одиннадцать функций через переходники `runtime\wingdi.c`, которые отдают GDI тот же текст в UTF-16.
+
+:= Пишется в программе | На деле зовётся | Где переходник
+: `TextOutA` | `wcc_TextOutA` → `TextOutW` | `runtime\wingdi.c`
+: `ExtTextOutA` | `wcc_ExtTextOutA` → `ExtTextOutW` | то же
+: `DrawTextA` | `wcc_DrawTextA` → `DrawTextW` | то же
+: `DrawTextExA` | `wcc_DrawTextExA` → `DrawTextExW` | то же
+: `GetTextExtentPoint32A` | `wcc_GetTextExtentPoint32A` → `GetTextExtentPoint32W` | то же
+: `TabbedTextOutA` | `wcc_TabbedTextOutA` → `TabbedTextOutW` | то же
+: `CreateFontA` | `wcc_CreateFontA` → `CreateFontW` | то же
+: `CreateFontIndirectA` | `wcc_CreateFontIndirectA` → `CreateFontIndirectW` | то же
+: `GetTextFaceA` | `wcc_GetTextFaceA` → `GetTextFaceW` | то же
+: `GetTextExtentExPointA` | `wcc_GetTextExtentExPointA` → `GetTextExtentExPointW` | то же
+: `GetTextExtentPointA` | `wcc_GetTextExtentPointA` → `GetTextExtentPoint32W` | то же
+
+`#define WINCC_GDI_ANSI` до `windows.h` отключает переходники: тогда эти имена ведут прямо в Windows, и текст читается в кодировке системы.
+
+### Макросы win\types.h
+
+:= Макрос | Что делает
+: `LOWORD`, `HIWORD`, `LOBYTE`, `HIBYTE` | младшая и старшая половина числа
+: `MAKEWORD`, `MAKELONG`, `MAKEWPARAM`, `MAKELPARAM`, `MAKELRESULT` | число из двух половин
+: `RGB`, `GetRValue`, `GetGValue`, `GetBValue` | цвет GDI и его части
+: `ARRAYSIZE`, `_countof` | число элементов массива
+: `SUCCEEDED`, `FAILED`, `S_OK`, `S_FALSE`, `E_FAIL` | результат `HRESULT`
+: `min`, `max` | меньшее и большее; `NOMINMAX` до `windows.h` их убирает
+: `ZeroMemory`, `SecureZeroMemory`, `FillMemory`, `CopyMemory`, `MoveMemory` | `memset`, `memcpy`, `memmove`
+: `MAKEINTRESOURCE`, `MAKEINTATOM`, `IS_INTRESOURCE` | номер вместо имени ресурса
+: `TEXT`, `__TEXT` | строка `"…"` или `L"…"` по `UNICODE`
+: `WINAPI`, `CALLBACK`, `APIENTRY`, `PASCAL`, `FAR`, `NEAR`, `IN`, `OUT`, `OPTIONAL` | пустые: в 64-разрядной Windows одно соглашение о вызове
+
+### Функции kernel32.h
+
+Пара `A/W` означает две функции: `CreateFileA` и `CreateFileW`.
+
+:= Тема | Функции
+: процесс и система | GetLastError, SetLastError, ExitProcess, TerminateProcess, GetCurrentProcess, GetCurrentThread, GetCurrentProcessId, GetCurrentThreadId, GetCommandLineA/W, GetModuleHandleA/W, GetModuleFileNameA/W, LoadLibraryA/W, FreeLibrary, GetProcAddress, GetSystemInfo, GlobalMemoryStatusEx, Beep
+: время | Sleep, SleepEx, GetTickCount, GetTickCount64, QueryPerformanceCounter, QueryPerformanceFrequency, GetLocalTime, GetSystemTime, SetLocalTime, GetSystemTimeAsFileTime, FileTimeToSystemTime, SystemTimeToFileTime, FileTimeToLocalFileTime
+: файлы | CreateFileA/W, ReadFile, WriteFile, CloseHandle, DuplicateHandle, GetFileSize, GetFileSizeEx, SetFilePointer, SetFilePointerEx, SetEndOfFile, FlushFileBuffers, GetFileTime, SetFileTime, DeleteFileA/W, CopyFileA/W, MoveFileA/W, MoveFileExA/W, GetFileAttributesA/W, SetFileAttributesA/W, GetTempFileNameA/W, GetFullPathNameA/W
+: папки и диски | CreateDirectoryA/W, RemoveDirectoryA/W, FindFirstFileA/W, FindNextFileA/W, FindClose, GetCurrentDirectoryA/W, SetCurrentDirectoryA/W, GetTempPathA/W, GetLogicalDrives, GetLogicalDriveStringsA/W, GetDriveTypeA/W, GetDiskFreeSpaceExA/W
+: каналы | CreatePipe, PeekNamedPipe
+: память | VirtualAlloc, VirtualFree, VirtualProtect, GetProcessHeap, HeapAlloc, HeapReAlloc, HeapFree, HeapSize, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GlobalSize, LocalAlloc, LocalFree
+: строки и кодировки | GetACP, GetOEMCP, MultiByteToWideChar, WideCharToMultiByte, lstrlenA/W, lstrcpyA/W, lstrcpynA/W, lstrcatA/W, lstrcmpA/W, lstrcmpiA/W, FormatMessageA/W, OutputDebugStringA/W
+: окружение | GetComputerNameA/W, GetEnvironmentVariableA/W, SetEnvironmentVariableA/W, ExpandEnvironmentStringsA/W
+: процессы | CreateProcessA/W, OpenProcess, GetExitCodeProcess, WinExec
+: потоки | CreateThread, ExitThread, GetExitCodeThread, ResumeThread, SuspendThread, SetThreadPriority, TlsAlloc, TlsGetValue, TlsSetValue, TlsFree
+: ожидание и синхронизация | WaitForSingleObject, WaitForMultipleObjects, CreateEventA/W, SetEvent, ResetEvent, CreateMutexA/W, ReleaseMutex, CreateSemaphoreA/W, ReleaseSemaphore, InitializeCriticalSection, EnterCriticalSection, TryEnterCriticalSection, LeaveCriticalSection, DeleteCriticalSection, InitializeSRWLock, AcquireSRWLockExclusive, ReleaseSRWLockExclusive, AcquireSRWLockShared, ReleaseSRWLockShared, InitializeConditionVariable, SleepConditionVariableCS, SleepConditionVariableSRW, WakeConditionVariable, WakeAllConditionVariable
+: атомарные операции (библиотека WinCC) | InterlockedIncrement, InterlockedDecrement, InterlockedExchange, InterlockedExchangeAdd, InterlockedCompareExchange, InterlockedIncrement64, InterlockedDecrement64, InterlockedExchange64, InterlockedExchangeAdd64, InterlockedCompareExchange64
+: консоль | GetStdHandle, SetStdHandle, AllocConsole, FreeConsole, AttachConsole, GetConsoleWindow, SetConsoleTitleA/W, GetConsoleTitleA/W, SetConsoleOutputCP, SetConsoleCP, GetConsoleOutputCP, GetConsoleCP, GetConsoleMode, SetConsoleMode, SetConsoleTextAttribute, SetConsoleCursorPosition, GetConsoleCursorInfo, SetConsoleCursorInfo, GetConsoleScreenBufferInfo, SetConsoleScreenBufferSize, SetConsoleWindowInfo, WriteConsoleA/W, ReadConsoleA/W, ReadConsoleInputA/W, PeekConsoleInputW, GetNumberOfConsoleInputEvents, FlushConsoleInputBuffer, FillConsoleOutputCharacterA/W, FillConsoleOutputAttribute, WriteConsoleOutputW, SetConsoleCtrlHandler
+
+Атомарные `Interlocked…` 64-разрядная `kernel32.dll` не отдаёт: в Visual Studio их подставляет сам компилятор. В WinCC это функции библиотеки WinCC, и, как всё из неё, в программу попадают только вызванные. Макросами к ним добавлены `InterlockedAdd`, `InterlockedAdd64`, `InterlockedExchangePointer`, `InterlockedCompareExchangePointer` и имена с подчёркиванием — `_InterlockedIncrement`…`_InterlockedCompareExchange64`.
+
+### Функции user32.h
+
+:= Тема | Функции
+: классы и окна | RegisterClassA/W, RegisterClassExA/W, UnregisterClassA/W, GetClassInfoExA/W, CreateWindowExA/W, DestroyWindow, ShowWindow, UpdateWindow, GetClassNameA/W, GetClassLongPtrA/W, SetClassLongPtrA/W, GetWindowLongA/W, SetWindowLongA/W, GetWindowLongPtrA/W, SetWindowLongPtrA/W, SetPropA/W, GetPropA/W, RemovePropA/W
+: сообщения | GetMessageA/W, PeekMessageA/W, TranslateMessage, DispatchMessageA/W, WaitMessage, PostQuitMessage, PostMessageA/W, PostThreadMessageA/W, SendMessageA/W, DefWindowProcA/W, CallWindowProcA/W, IsDialogMessageA/W, RegisterWindowMessageA/W
+: окна-сообщения и звук | MessageBoxA/W, MessageBeep
+: клавиши-ускорители | CreateAcceleratorTableA/W, TranslateAcceleratorA/W, DestroyAcceleratorTable
+: перерисовка | BeginPaint, EndPaint, InvalidateRect, ValidateRect, RedrawWindow, GetUpdateRect, GetDC, GetWindowDC, ReleaseDC
+: размер и положение | GetClientRect, GetWindowRect, SetWindowPos, MoveWindow, GetWindowPlacement, SetWindowPlacement, AdjustWindowRect, AdjustWindowRectEx, ScreenToClient, ClientToScreen, MapWindowPoints, WindowFromPoint, ChildWindowFromPoint
+: текст окна и элементы | SetWindowTextA/W, GetWindowTextA/W, GetWindowTextLengthA/W, GetDlgItem, GetDlgCtrlID, SetDlgItemTextA/W, GetDlgItemTextA/W, SetDlgItemInt, GetDlgItemInt, CheckDlgButton, IsDlgButtonChecked, CheckRadioButton, SendDlgItemMessageA/W
+: состояние и фокус | EnableWindow, IsWindowEnabled, IsWindowVisible, IsWindow, IsIconic, IsZoomed, SetFocus, GetFocus, GetActiveWindow, SetActiveWindow, GetForegroundWindow, SetForegroundWindow, BringWindowToTop, FlashWindow
+: родство и поиск окон | GetParent, SetParent, GetDesktopWindow, GetWindow, FindWindowA/W, FindWindowExA/W, EnumWindows, EnumChildWindows
+: курсор и значки | LoadCursorA/W, LoadIconA/W, LoadImageA/W, DestroyIcon, DestroyCursor, DrawIcon, DrawIconEx, SetCursor, GetCursor, ShowCursor, GetCursorPos, SetCursorPos, ClipCursor
+: мышь и клавиатура | SetCapture, GetCapture, ReleaseCapture, TrackMouseEvent, GetCaretBlinkTime, GetKeyState, GetAsyncKeyState, GetKeyboardState, MapVirtualKeyA/W, keybd_event, mouse_event, RegisterHotKey, UnregisterHotKey, GetKeyboardLayout
+: таймеры | SetTimer, KillTimer
+: система, масштаб, мониторы | GetSystemMetrics, SystemParametersInfoA/W, GetSysColor, GetSysColorBrush, GetDpiForWindow, GetDpiForSystem, SetProcessDPIAware, MonitorFromWindow, MonitorFromPoint, GetMonitorInfoA/W, EnumDisplayMonitors, ExitWindowsEx, LockWorkStation
+: меню | CreateMenu, CreatePopupMenu, DestroyMenu, AppendMenuA/W, InsertMenuA/W, ModifyMenuA/W, DeleteMenu, RemoveMenu, SetMenu, GetMenu, GetSubMenu, GetSystemMenu, GetMenuItemCount, CheckMenuItem, CheckMenuRadioItem, EnableMenuItem, DrawMenuBar, TrackPopupMenu
+: буфер обмена | OpenClipboard, CloseClipboard, EmptyClipboard, SetClipboardData, GetClipboardData, IsClipboardFormatAvailable
+: рисование user32 | FillRect, FrameRect, InvertRect, DrawFocusRect, DrawEdge, DrawTextA/W
+: прямоугольники | SetRect, SetRectEmpty, CopyRect, InflateRect, OffsetRect, IntersectRect, UnionRect, PtInRect, IsRectEmpty, EqualRect
+: прокрутка | GetScrollPos, SetScrollPos, GetScrollRange, SetScrollRange, GetScrollInfo, SetScrollInfo, ShowScrollBar, EnableScrollBar, ScrollWindow
+: строки | wsprintfA/W, wvsprintfA/W, CharUpperA/W, CharLowerA/W, CharNextA/W, IsCharAlphaA/W, IsCharAlphaNumericA/W
+: перехват | SetWindowsHookExA/W, UnhookWindowsHookEx, CallNextHookEx
+
+### Функции gdi32.h
+
+:= Тема | Функции
+: инструменты | GetStockObject, SelectObject, DeleteObject, GetObjectA/W, CreateSolidBrush, CreateHatchBrush, CreatePatternBrush, CreateBrushIndirect, CreatePen, ExtCreatePen, CreateFontA/W, CreateFontIndirectA/W
+: настройки холста | SetTextColor, GetTextColor, SetBkColor, GetBkColor, SetBkMode, SetDCBrushColor, SetDCPenColor, SetROP2, SetTextAlign, SetMapMode, SetViewportOrgEx, SetWindowOrgEx, SetStretchBltMode, SetBrushOrgEx
+: текст | TextOutA/W, ExtTextOutA/W, GetTextExtentPoint32A/W, GetTextMetricsA/W, DrawTextExA/W, TabbedTextOutA/W, GetTextFaceA, GetTextExtentExPointA, GetTextExtentPointA
+: линии и фигуры | MoveToEx, LineTo, Polyline, PolylineTo, Polygon, PolyBezier, Rectangle, RoundRect, Ellipse, Arc, Pie, Chord, FloodFill, ExtFloodFill
+: контуры | BeginPath, EndPath, StrokePath, FillPath, StrokeAndFillPath
+: точки и картинки | SetPixel, SetPixelV, GetPixel, PatBlt, BitBlt, StretchBlt, MaskBlt, CreateCompatibleBitmap, CreateBitmap, CreateDIBSection, CreateDIBitmap, StretchDIBits, SetDIBitsToDevice, GetDIBits, SetDIBits, UpdateLayeredWindow
+: холсты | CreateCompatibleDC, CreateDCA/W, DeleteDC, SaveDC, RestoreDC, GetDeviceCaps, GdiFlush
+: области | CreateRectRgn, CreateRoundRectRgn, CreateEllipticRgn, CreatePolygonRgn, CombineRgn, SelectClipRgn, IntersectClipRect, FillRgn, PtInRegion, SetWindowRgn
+: переходники WinCC | wcc_TextOutA, wcc_ExtTextOutA, wcc_DrawTextA, wcc_DrawTextExA, wcc_GetTextExtentPoint32A, wcc_TabbedTextOutA, wcc_CreateFontA, wcc_CreateFontIndirectA, wcc_GetTextFaceA, wcc_GetTextExtentExPointA, wcc_GetTextExtentPointA
+
+`UpdateLayeredWindow`, `DrawTextExA/W` и `TabbedTextOutA/W` объявлены в `gdi32.h`, потому что относятся к рисованию, а живут в `user32.dll` — wcc сам найдёт, где именно.
+
+### Функции comdlg32.h, shell32.h, advapi32.h
+
+:= Файл | Функции
+: `comdlg32.h` | GetOpenFileNameA/W, GetSaveFileNameA/W, ChooseColorA/W, ChooseFontA/W, CommDlgExtendedError
+: `shell32.h` | ShellExecuteA/W, DragAcceptFiles, DragQueryFileA/W, DragQueryPoint, DragFinish, Shell_NotifyIconA/W, SHGetFolderPathA/W, SHFileOperationA/W, CommandLineToArgvW, ExtractIconA/W
+: `advapi32.h` | RegOpenKeyExA/W, RegCreateKeyExA/W, RegQueryValueExA/W, RegGetValueA/W, RegSetValueExA/W, RegDeleteValueA/W, RegDeleteKeyA/W, RegEnumKeyExA/W, RegEnumValueA/W, RegCloseKey, GetUserNameA/W
+
+### except.h: исключения
+
+`win\except.h` — то, что нужно структурным исключениям `__try`, `__except`, `__finally`, `__leave`. Ловятся сбои процессора (обращение к чужой памяти, деление на ноль…), исключения от `RaiseException` и исключения из глубины вызовов. `return`, `break`, `continue` и `__leave` из `__try` с `__finally` проходят через блок `__finally`. Обработчик исключений — `__C_specific_handler` из `ntdll.dll`.
+
+:= Что | Имена
+: ответ фильтра `__except (…)` | `EXCEPTION_EXECUTE_HANDLER` (1), `EXCEPTION_CONTINUE_SEARCH` (0), `EXCEPTION_CONTINUE_EXECUTION` (-1)
+: коды исключений | `EXCEPTION_ACCESS_VIOLATION` (`C0000005`), `EXCEPTION_INT_DIVIDE_BY_ZERO` (`C0000094`), `EXCEPTION_INT_OVERFLOW`, `EXCEPTION_STACK_OVERFLOW` (`C00000FD`), `EXCEPTION_ILLEGAL_INSTRUCTION`, `EXCEPTION_PRIV_INSTRUCTION`, `EXCEPTION_BREAKPOINT`, `EXCEPTION_SINGLE_STEP`, `EXCEPTION_ARRAY_BOUNDS_EXCEEDED`, `EXCEPTION_DATATYPE_MISALIGNMENT`, `EXCEPTION_IN_PAGE_ERROR`, `EXCEPTION_GUARD_PAGE`, `EXCEPTION_INVALID_HANDLE`, `EXCEPTION_NONCONTINUABLE_EXCEPTION`, `EXCEPTION_INVALID_DISPOSITION`, `EXCEPTION_FLT_…` (семь кодов чисел с точкой); `STATUS_ACCESS_VIOLATION`, `STATUS_STACK_OVERFLOW`, `STATUS_INTEGER_DIVIDE_BY_ZERO`
+: структуры | `EXCEPTION_RECORD` (код, флаги, адрес, параметры), `CONTEXT` (регистры процессора x64), `EXCEPTION_POINTERS` (запись и регистры вместе), `M128A`, `XSAVE_FORMAT`; флаги `CONTEXT_CONTROL`, `CONTEXT_INTEGER`, `CONTEXT_FULL`, `CONTEXT_ALL` и другие
+: функции | RaiseException, SetUnhandledExceptionFilter, UnhandledExceptionFilter, AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, AddVectoredContinueHandler, RemoveVectoredContinueHandler, RtlCaptureContext, GetThreadContext, SetThreadContext, IsDebuggerPresent, DebugBreak, RtlCaptureStackBackTrace
+: слова компилятора | `GetExceptionCode()` — в условии и в блоке `__except`; `GetExceptionInformation()` (указатель `EXCEPTION_POINTERS *`) — только в условии; `AbnormalTermination()` — только в блоке `__finally`
+
+`GetExceptionCode`, `GetExceptionInformation` и `AbnormalTermination` — не функции, а слова компилятора: в другом месте программы их нет (приложение Б, «Структурные исключения»). Обработчик сигнала `signal(SIGSEGV, …)` вместе с ними тоже работает: библиотека WinCC ловит сбой, только если его не поймал ни один `__try`.
+
+`sal.h`, который `windows.h` подключает сам, делает пустыми все пометки параметров Microsoft (`_In_`, `_Out_`, `_Inout_opt_`…): чужой код с ними собирается без правок.
+
+## Заголовки рядом с windows.h
+
+:= Заголовок | Что в нём | Функций | DLL
+: `commdlg.h` | только подключает `windows.h`: диалоги уже там | — | comdlg32
+: `shellapi.h` | только подключает `windows.h`: shell32 уже там | — | shell32
+: `windowsx.h` | 48 макросов-обёрток над сообщениями | — | —
+: `tchar.h` | `TCHAR`, `_T`, `_tmain` и имена функций Си для обеих кодировок | — | —
+: `commctrl.h` | элементы Common Controls: классы, стили, сообщения | 2 | comctl32
+: `mmsystem.h` | звук и точный таймер | 7 | winmm
+: `gdiplus.h` | GDI+ для Си: плоские функции `gdiplus.dll` | 183 | gdiplus
+
+### windowsx.h
+
+:= Группа | Макросы
+: мышь в lp | GET_X_LPARAM, GET_Y_LPARAM
+: окно | GetWindowInstance, GetWindowStyle, SetWindowFont, GetWindowFont
+: инструменты GDI | SelectPen, DeletePen, SelectBrush, DeleteBrush, SelectFont, DeleteFont, SelectBitmap, DeleteBitmap, GetStockPen, GetStockBrush, GetStockFont
+: кнопка | Button_GetCheck, Button_SetCheck, Button_Enable
+: поле | Edit_GetText, Edit_SetText, Edit_GetTextLength, Edit_LimitText, Edit_SetSel, Edit_ReplaceSel, Edit_SetReadOnly
+: список | ListBox_AddString, ListBox_InsertString, ListBox_DeleteString, ListBox_ResetContent, ListBox_GetCount, ListBox_GetCurSel, ListBox_SetCurSel, ListBox_GetText, ListBox_GetTextLen, ListBox_GetItemData, ListBox_SetItemData
+: раскрывающийся список | ComboBox_AddString, ComboBox_InsertString, ComboBox_DeleteString, ComboBox_ResetContent, ComboBox_GetCount, ComboBox_GetCurSel, ComboBox_SetCurSel, ComboBox_GetLBText, ComboBox_GetLBTextLen
+: надпись | Static_SetText
+
+Макросы зовут `SendMessage`, `GetWindowText` и `SetWindowText` без буквы, поэтому следуют `UNICODE`: без него строки в них UTF-8, с ним — UTF-16.
+
+### tchar.h
+
+Пишет одну программу для обеих кодировок. `_UNICODE` и `UNICODE` в нём включают друг друга.
+
+:= Имя | Без _UNICODE | С _UNICODE
+: `TCHAR`, `_TCHAR` | `char` | `wchar_t`
+: `_T("…")`, `_TEXT("…")` | `"…"` | `L"…"`
+: `_tmain`, `_tWinMain` | `main`, `WinMain` | `wmain`, `wWinMain`
+: `_tprintf`, `_ftprintf`, `_stprintf`, `_tscanf` | `printf`, `fprintf`, `sprintf`, `scanf` | `wprintf`, `fwprintf`, `swprintf`, `wscanf`
+: `_tcslen`, `_tcscpy`, `_tcsncpy`, `_tcscat` | `strlen`, `strcpy`, `strncpy`, `strcat` | `wcslen`, `wcscpy`, `wcsncpy`, `wcscat`
+: `_tcscmp`, `_tcsncmp`, `_tcschr`, `_tcsrchr`, `_tcsstr` | `strcmp`… `strstr` | `wcscmp`… `wcsstr`
+: `_tcstol`, `_tcstoul`, `_tcstod` | `strtol`, `strtoul`, `strtod` | `wcstol`, `wcstoul`, `wcstod`
+: `_fgetts`, `_fputts`, `_puttchar`, `_gettchar` | `fgets`, `fputs`, `putchar`, `getchar` | `fgetws`, `fputws`, `putwchar`, `getwchar`
+
+### commctrl.h
+
+Функции: InitCommonControlsEx, InitCommonControls. Остальное — имена классов и сообщения элементов; сами элементы создаются `CreateWindowExA` по имени класса.
+
+:= Элемент | Класс | Сообщения и стили
+: полоса хода | `PROGRESS_CLASS` | `PBS_SMOOTH`, `PBS_MARQUEE`, `PBM_SETRANGE32`, `PBM_SETPOS`, `PBM_STEPIT`, `PBM_SETMARQUEE`, `PBM_SETBARCOLOR`
+: ползунок | `TRACKBAR_CLASS` | `TBS_AUTOTICKS`, `TBS_VERT`, `TBM_SETRANGE`, `TBM_SETPOS`, `TBM_GETPOS`, `TBM_SETTICFREQ`
+: строка состояния | `STATUSCLASSNAME` | `SBARS_SIZEGRIP`, `SB_SETTEXT`, `SB_SETPARTS`, `SB_SIMPLE`
+: счётчик со стрелками | `UPDOWN_CLASS` | `UDS_SETBUDDYINT`, `UDS_ALIGNRIGHT`, `UDM_SETRANGE32`, `UDM_SETPOS32`, `UDM_GETPOS32`
+: подсказки | `TOOLTIPS_CLASS` | —
+: таблица, дерево, вкладки | `WC_LISTVIEW`, `WC_TREEVIEW`, `WC_TABCONTROL` | только имена классов; сообщения объявляются в программе
+
+Уведомления `NM_CLICK`, `NM_DBLCLK`, `NM_RETURN`, `NM_RCLICK` и флаги `ICC_…` для `InitCommonControlsEx` — тоже здесь. Манифест Common Controls 6 в каждой программе WinCC уже есть.
+
+### mmsystem.h
+
+Функции: PlaySoundA/W, sndPlaySoundA/W, timeGetTime, timeBeginPeriod, timeEndPeriod. Флаги звука: `SND_SYNC`, `SND_ASYNC`, `SND_LOOP`, `SND_NOSTOP`, `SND_PURGE`, `SND_FILENAME`, `SND_ALIAS`, `SND_MEMORY`, `SND_RESOURCE`, `SND_NODEFAULT`.
+
+### gdiplus.h
+
+Заголовок даёт функции, перечисления режимов (`SmoothingMode…`, `TextRenderingHint…`, `LinearGradientMode…`, `FontStyle…`, `StringAlignment…` и другие), коды `GpStatus` от `Ok` до `PropertyNotSupported`, структуры `PointF`, `RectF`, `Rect`, `BitmapData`, форматы точек `PixelFormat32bppARGB` и другие, макросы цвета `MakeARGB` и `MakeRGB` и готовые кодировщики `GdipEncoderPng`, `GdipEncoderJpeg`, `GdipEncoderBmp`, `GdipEncoderGif`, `GdipEncoderTiff` для `GdipSaveImageToFile`. Все объекты — непрозрачные указатели `GpGraphics *`, `GpBrush *`, `GpPen *`… Как этим пользоваться — глава 12.
+
+:= Тема | Функции
+: запуск | GdiplusStartup, GdiplusShutdown
+: графика | GdipCreateFromHDC, GdipCreateFromHWND, GdipDeleteGraphics, GdipGetDC, GdipReleaseDC, GdipGraphicsClear, GdipFlush, GdipSetSmoothingMode, GdipGetSmoothingMode, GdipSetPixelOffsetMode, GdipSetTextRenderingHint, GdipSetTextContrast, GdipSetInterpolationMode, GdipSetCompositingMode, GdipSetCompositingQuality, GdipSetPageUnit, GdipSetPageScale, GdipGetDpiX, GdipGetDpiY, GdipSaveGraphics, GdipRestoreGraphics
+: преобразования графики | GdipResetWorldTransform, GdipSetWorldTransform, GdipGetWorldTransform, GdipMultiplyWorldTransform, GdipTranslateWorldTransform, GdipScaleWorldTransform, GdipRotateWorldTransform
+: обрезка | GdipSetClipRect, GdipSetClipPath, GdipSetClipRegion, GdipResetClip
+: линии и обводка | GdipDrawLine, GdipDrawLineI, GdipDrawLines, GdipDrawRectangle, GdipDrawRectangleI, GdipDrawEllipse, GdipDrawArc, GdipDrawPie, GdipDrawBezier, GdipDrawBeziers, GdipDrawPolygon, GdipDrawCurve, GdipDrawClosedCurve, GdipDrawPath
+: заливка | GdipFillRectangle, GdipFillRectangleI, GdipFillEllipse, GdipFillPie, GdipFillPolygon, GdipFillClosedCurve, GdipFillPath, GdipFillRegion
+: кисти | GdipCreateSolidFill, GdipSetSolidFillColor, GdipGetSolidFillColor, GdipCreateLineBrush, GdipCreateLineBrushFromRect, GdipCreateLineBrushFromRectWithAngle, GdipSetLinePresetBlend, GdipSetLineGammaCorrection, GdipSetLineTransform, GdipCreatePathGradient, GdipCreatePathGradientFromPath, GdipSetPathGradientCenterColor, GdipSetPathGradientSurroundColorsWithCount, GdipSetPathGradientCenterPoint, GdipSetPathGradientPresetBlend, GdipCreateHatchBrush, GdipCreateTexture, GdipSetTextureTransform, GdipScaleTextureTransform, GdipDeleteBrush
+: перья | GdipCreatePen1, GdipCreatePen2, GdipDeletePen, GdipClonePen, GdipSetPenColor, GdipSetPenWidth, GdipGetPenWidth, GdipSetPenDashStyle, GdipSetPenDashArray, GdipSetPenStartCap, GdipSetPenEndCap, GdipSetPenLineCap197819, GdipSetPenLineJoin, GdipGetPenBrushFill
+: контуры | GdipCreatePath, GdipDeletePath, GdipClonePath, GdipResetPath, GdipStartPathFigure, GdipClosePathFigure, GdipAddPathLine, GdipAddPathLine2, GdipAddPathArc, GdipAddPathBezier, GdipAddPathRectangle, GdipAddPathEllipse, GdipAddPathPie, GdipAddPathPolygon, GdipAddPathCurve, GdipAddPathClosedCurve, GdipAddPathString, GdipTransformPath, GdipFlattenPath, GdipWidenPath, GdipSetPathFillMode, GdipGetPathWorldBounds, GdipIsVisiblePathPoint
+: области | GdipCreateRegion, GdipCreateRegionRect, GdipCreateRegionPath, GdipCombineRegionRect, GdipCombineRegionPath, GdipIsVisibleRegionPoint, GdipGetRegionHRgn, GdipDeleteRegion
+: матрицы | GdipCreateMatrix, GdipCreateMatrix2, GdipDeleteMatrix, GdipSetMatrixElements, GdipGetMatrixElements, GdipTranslateMatrix, GdipScaleMatrix, GdipRotateMatrix, GdipInvertMatrix, GdipTransformMatrixPoints
+: шрифты | GdipCreateFontFamilyFromName, GdipGetGenericFontFamilySansSerif, GdipGetGenericFontFamilySerif, GdipGetGenericFontFamilyMonospace, GdipDeleteFontFamily, GdipGetCellAscent, GdipGetEmHeight, GdipGetLineSpacing, GdipCreateFont, GdipCreateFontFromDC, GdipCreateFontFromLogfontW, GdipDeleteFont, GdipGetFontHeight
+: текст | GdipCreateStringFormat, GdipStringFormatGetGenericDefault, GdipStringFormatGetGenericTypographic, GdipCloneStringFormat, GdipDeleteStringFormat, GdipSetStringFormatAlign, GdipSetStringFormatLineAlign, GdipSetStringFormatFlags, GdipSetStringFormatTrimming, GdipDrawString, GdipMeasureString
+: картинки | GdipLoadImageFromFile, GdipCreateBitmapFromFile, GdipCreateBitmapFromScan0, GdipCreateBitmapFromHBITMAP, GdipCreateBitmapFromHICON, GdipCreateBitmapFromGraphics, GdipCreateHBITMAPFromBitmap, GdipCreateHICONFromBitmap, GdipCloneImage, GdipDisposeImage, GdipGetImageWidth, GdipGetImageHeight, GdipGetImagePixelFormat, GdipGetImageGraphicsContext, GdipImageRotateFlip, GdipSaveImageToFile
+: вывод картинок | GdipDrawImage, GdipDrawImageI, GdipDrawImageRect, GdipDrawImageRectI, GdipDrawImageRectRect
+: точки | GdipBitmapGetPixel, GdipBitmapSetPixel, GdipBitmapLockBits, GdipBitmapUnlockBits
+: цвет картинок | GdipCreateImageAttributes, GdipDisposeImageAttributes, GdipSetImageAttributesColorMatrix
+
+## Сеть и WUI
+
+Подробно об этих заголовках — в частях IV и V.
+
+:= Заголовок | Что в нём | Функций | Откуда
+: `winsock2.h` | сокеты: TCP, UDP, IPv4 и IPv6, `select`, `WSAPoll`, события в окно и в объект, коды `ioctlsocket` и `WSAIoctl` (`IOC_VENDOR`, `_WSAIOW` и соседи) — глава 21 | 57 | ws2_32
+: `ws2tcpip.h` | `getaddrinfo`, `getnameinfo`, `inet_pton`, `inet_ntop`, адреса `in6addr_any` и `in6addr_loopback`, `IN6ADDR_ANY_INIT`, `IN6ADDR_LOOPBACK_INIT` — глава 21 | 10 | ws2_32
+: `mswsock.h` | добавки Microsoft к сокетам: `SIO_UDP_CONNRESET`, `SIO_UDP_NETRESET`, `SO_UPDATE_ACCEPT_CONTEXT`, `SO_CONNECT_TIME` и другие `SO_…`; подключает `winsock2.h` | — | —
+: `winhttp.h` | HTTP и HTTPS: запросы, заголовки, прокси, тайм-ауты, WebSocket — глава 21 | 33 | winhttp
+: `winsock.h`, `ws2ipdef.h` | только подключают `winsock2.h` | — | —
+: `net.h` | библиотека сети: HTTP, TCP, UDP, свой веб-сервер — главы 18–20, приложение Д | 47 | `lib\net` исходниками
+: `wui.h` | библиотека оформления окон WUI — главы 13–17, приложение Г | 72 | `lib\wui` исходниками
+: `wui_icons.h` | 123 значка ThemeLibrary: `WUI_ICON_HOME`… — глава 16 | — | —
+
+`FD_SETSIZE` — сколько сокетов вмещает набор `fd_set` для `select` — в `winsock2.h` равен 64. Если нужно больше, своё значение задают строкой `#define FD_SETSIZE 256` до `#include <winsock2.h>` (или до `net.h`, `ws2tcpip.h`, `mswsock.h` — они подключают его сами).
+
+`wui.h` делает программу оконной даже с `main` — в нём стоит `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")`.
+
+## Чего нет
+
+Заголовков, которых нет в списке выше, у WinCC нет; на `#include` такого файла wcc ответит «нет файла имя.h». Самые частые из них и чем их заменить:
+
+:= Заголовок | Чем заменить
+: `unistd.h` | имена POSIX из `io.h` (`open`, `read`, `write`, `close`, `access`, `unlink`), `direct.h` (`chdir`, `getcwd`, `rmdir`) и `process.h` (`getpid`)
+: `shlwapi.h`, `shlobj.h`, `dwmapi.h`, `winternl.h`, `psapi.h`, `tlhelp32.h` и другие заголовки Windows | своё объявление нужных функций и `#pragma comment(lib, "имя")` — глава 11
+: `objbase.h` и заголовки COM | функции `ole32` объявляются сами; интерфейсы COM описываются вручную
+: `xmmintrin.h`, `emmintrin.h`, `immintrin.h` и другие заголовки SSE и AVX с типом `__m128` | вставки на ассемблере: команды SSE и AVX ассемблер WinCC понимает (глава 8)

@@ -1,0 +1,157 @@
+<tl:ThemedWindow x:Class="WinCC.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:tl="clr-namespace:ThemeLibrary"
+        Title="WinCC" Subtitle="компилятор Си для Windows" Icon="icon.ico"
+        Width="1280" Height="820" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen" AllowDrop="True">
+
+    <tl:ThemedWindow.TitleBarContent>
+        <tl:ThemeSelector StorageKey="WinCC" Width="230" VerticalAlignment="Center" Margin="0,0,10,0"/>
+    </tl:ThemedWindow.TitleBarContent>
+
+    <tl:ThemedWindow.Resources>
+        <Style x:Key="Panel" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Theme.Card.Background}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Theme.Card.Border}"/>
+            <Setter Property="BorderThickness" Value="{DynamicResource Theme.Card.BorderThickness}"/>
+            <Setter Property="CornerRadius" Value="{DynamicResource Theme.Card.CornerRadius}"/>
+        </Style>
+        <Style x:Key="ButtonIcon" TargetType="tl:Icon">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Margin" Value="0,0,7,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="ToolButton" TargetType="Button" BasedOn="{StaticResource Theme.Button}">
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Padding" Value="12,6"/>
+        </Style>
+    </tl:ThemedWindow.Resources>
+
+    <Grid Margin="10,4,10,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition x:Name="EditorRow" Height="*" MinHeight="120"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition x:Name="BottomRow" Height="0.36*" MinHeight="120"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Кнопки -->
+        <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="8,7" Margin="0,0,0,8">
+            <!-- Группы кнопок переносятся на вторую строку, когда окно узкое -->
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                    <Button x:Name="HelpButton" Style="{StaticResource ToolButton}" Padding="9,6" Margin="0,0,14,0"
+                            ToolTip="Справка — руководство WinCC (F1)">
+                        <tl:Icon Kind="Book" Width="16" Height="16" VerticalAlignment="Center"/>
+                    </Button>
+                    <tl:Icon x:Name="CompilerIcon" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CompilerText" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                </StackPanel>
+                <WrapPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <Button x:Name="NewButton" Style="{StaticResource ToolButton}" ToolTip="Новый файл (Ctrl+N)">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="File" Style="{StaticResource ButtonIcon}"/><TextBlock Text="Новый"/></StackPanel>
+                        </Button>
+                        <Button x:Name="OpenButton" Style="{StaticResource ToolButton}" ToolTip="Открыть файл (Ctrl+O)">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="FolderOpen" Style="{StaticResource ButtonIcon}"/><TextBlock Text="Открыть"/></StackPanel>
+                        </Button>
+                        <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" ToolTip="Сохранить (Ctrl+S), сохранить как — Ctrl+Shift+S">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="Save" Style="{StaticResource ButtonIcon}"/><TextBlock Text="Сохранить"/></StackPanel>
+                        </Button>
+                        <Rectangle Width="1" Margin="6,4,12,4" Fill="{DynamicResource Theme.TextDim}" Opacity="0.35"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <Button x:Name="BuildButton" Style="{StaticResource ToolButton}" ToolTip="Собрать (F7)">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="Wrench" Style="{StaticResource ButtonIcon}"/><TextBlock Text="Собрать"/></StackPanel>
+                        </Button>
+                        <Button x:Name="RunButton" Style="{DynamicResource Theme.AccentButton}" Margin="0,0,6,0" Padding="12,6" ToolTip="Собрать и запустить (F5)">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="Play" Style="{StaticResource ButtonIcon}"/><TextBlock Text="Запустить"/></StackPanel>
+                        </Button>
+                        <Rectangle Width="1" Margin="6,4,12,4" Fill="{DynamicResource Theme.TextDim}" Opacity="0.35"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <TextBlock Text="Вид программы" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource Theme.TextDim}"/>
+                        <ComboBox x:Name="KindBox" Width="130" VerticalAlignment="Center" ToolTip="Консоль — программа в окне консоли, Окно — программа со своими окнами, DLL — библиотека"/>
+                    </StackPanel>
+                </WrapPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Файлы -->
+        <Border Grid.Row="1" Style="{StaticResource Panel}" Padding="4">
+            <Grid>
+                <TabControl x:Name="Docs"/>
+                <StackPanel x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                    <tl:Icon Kind="Code" Width="44" Height="44" Foreground="{DynamicResource Theme.TextDim}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Нет открытых файлов" Style="{DynamicResource Theme.H2}" HorizontalAlignment="Center" Margin="0,12,0,4"/>
+                    <TextBlock Text="Создайте новый файл или откройте готовый — его можно и перетащить в окно."
+                               Foreground="{DynamicResource Theme.TextDim}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,14,0,0">
+                        <Button x:Name="HintNewButton" Content="Новый файл" Style="{StaticResource ToolButton}"/>
+                        <Button x:Name="HintOpenButton" Content="Открыть…" Style="{StaticResource ToolButton}" Margin="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                      Background="Transparent" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Focusable="False"/>
+
+        <!-- Вывод компилятора и список ошибок -->
+        <Border Grid.Row="3" Style="{StaticResource Panel}" Padding="4">
+            <TabControl x:Name="BottomTabs">
+                <TabItem x:Name="OutputTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal"><tl:Icon Kind="FileText" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock Text="Вывод"/></StackPanel>
+                    </TabItem.Header>
+                    <TextBox x:Name="OutputBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                             FontFamily="{DynamicResource Theme.Font.Mono}" FontSize="13" BorderThickness="0"
+                             ToolTip="Двойной щелчок по строке с ошибкой — перейти к ней"/>
+                </TabItem>
+                <TabItem x:Name="ErrorsTab">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal"><tl:Icon Kind="Warning" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/><TextBlock x:Name="ErrorsHeader" Text="Ошибки"/></StackPanel>
+                    </TabItem.Header>
+                    <Grid>
+                        <ListView x:Name="ErrorList" BorderThickness="0">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="" Width="34">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <tl:Icon x:Name="mark" Kind="Error" Width="14" Height="14" Foreground="{DynamicResource Theme.Danger}"/>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsWarning}" Value="True">
+                                                        <Setter TargetName="mark" Property="Kind" Value="Warning"/>
+                                                        <Setter TargetName="mark" Property="Foreground" Value="{DynamicResource Theme.Warning}"/>
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Файл" Width="170" DisplayMemberBinding="{Binding FileName}"/>
+                                    <GridViewColumn Header="Строка" Width="84" DisplayMemberBinding="{Binding LineText}"/>
+                                    <GridViewColumn Header="Сообщение" Width="520" DisplayMemberBinding="{Binding Text}"/>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                        <TextBlock x:Name="NoErrorsText" Text="Ошибок нет" Foreground="{DynamicResource Theme.TextDim}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Border>
+
+        <!-- Строка состояния -->
+        <DockPanel Grid.Row="4" Margin="4,7,4,0" LastChildFill="True">
+            <TextBlock x:Name="KindStatus" DockPanel.Dock="Right" Foreground="{DynamicResource Theme.TextDim}" Margin="18,0,0,0"/>
+            <TextBlock x:Name="EncodingStatus" DockPanel.Dock="Right" Foreground="{DynamicResource Theme.TextDim}" Margin="18,0,0,0"/>
+            <TextBlock x:Name="CaretStatus" DockPanel.Dock="Right" Foreground="{DynamicResource Theme.TextDim}" Margin="18,0,0,0"/>
+            <TextBlock x:Name="PathStatus" Foreground="{DynamicResource Theme.TextDim}" TextTrimming="CharacterEllipsis"/>
+        </DockPanel>
+    </Grid>
+</tl:ThemedWindow>

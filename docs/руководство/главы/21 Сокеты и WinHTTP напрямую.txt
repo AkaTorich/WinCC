@@ -1,0 +1,507 @@
+# Сокеты и WinHTTP напрямую
+Библиотека `net.h` закрывает частые случаи, но не все. Иногда нужна тонкая настройка соединения, UDP по IPv6, свой сертификат HTTPS или сетевая программа с окном, которое не замирает ни на миг. Тогда программа берёт то, на чём стоит сама библиотека: сокеты Windows из `winsock2.h` и `ws2tcpip.h` и службу WinHTTP из `winhttp.h`. Это те же заголовки и те же функции, что в Visual Studio, поэтому любое руководство и любой пример для Windows подходят и к WinCC. Глава показывает клиент и сервер на сокетах, запрос через WinHTTP по шагам и оконную программу, которой сеть приходит сообщениями окну.
+
+## Когда спускаться ниже net.h
+
+`net.h` сознательно проста: одно соединение — один `NetSocket`, один запрос — один вызов. Сокеты напрямую нужны, когда эта простота мешает:
+
+- сервер на выбранном адресе: `net_listen` слушает все сети, `net_listen_local` — только `127.0.0.1`, а свой сокет можно привязать к `::1` или к одной из сетей компьютера;
+- настройки соединения: `TCP_NODELAY` (без задержки мелких пакетов), размеры буферов, `SO_EXCLUSIVEADDRUSE`;
+- UDP по IPv6 и групповая рассылка (`IP_ADD_MEMBERSHIP`): UDP в `net.h` — только IPv4;
+- сеть в окне без второго потока — `WSAAsyncSelect`;
+- WinHTTP с настройками, которых нет в `net.h`: свой или самодельный сертификат, запрет переадресаций, WebSocket, запросы без ожидания.
+
+Смешивать можно: `net_handle` отдаёт настоящий `SOCKET` соединения библиотеки, и с ним работают все функции `winsock2.h`, как `select` в комнате из главы 19. Программа без `net.h` ещё и меньше: клиент на голых сокетах ниже весит около 68 КБ против 80–90 КБ с библиотекой.
+
+## Заголовки и DLL
+
+:= Заголовок | Что даёт | DLL
+: `winsock2.h` | Сокеты: `socket`, `connect`, `bind`, `listen`, `accept`, `send`, `recv`, `select`, `WSAPoll`, `WSAAsyncSelect`, `WSAEventSelect`, константы и структуры адресов | `ws2_32`
+: `ws2tcpip.h` | Имена и адреса: `getaddrinfo`, `getnameinfo`, `inet_pton`, `inet_ntop`, их W-варианты | `ws2_32`
+: `mswsock.h` | Добавки Microsoft к сокетам: `SIO_UDP_CONNRESET`, `SIO_UDP_NETRESET`, `SO_UPDATE_ACCEPT_CONTEXT`, `SO_CONNECT_TIME` и соседи | `ws2_32`
+: `winhttp.h` | HTTP и HTTPS: сеанс, соединение, запрос, заголовки, прокси, тайм-ауты, WebSocket | `winhttp`
+: `winsock.h`, `ws2ipdef.h` | Ведут в `winsock2.h` — для старого кода | —
+
+DLL подключать не нужно. `ws2_32` wcc просматривает всегда, а в `winhttp.h` стоит `#pragma comment(lib, "winhttp")`, и wcc находит функции в `winhttp.dll` по её таблице экспорта. Функции в заголовках — те, что на самом деле есть в этих DLL, а числа и размеры структур те же, что в заголовках Visual Studio, поэтому программы и примеры для MSVC переносятся без правок.
+
+`winsock2.h` сам включает `windows.h`. Если в программе есть и то и другое, порядок не важен.
+
+## Начало и конец: WSAStartup
+
+Перед первым сокетом программа зовёт `WSAStartup(MAKEWORD(2, 2), &wsa)` — так она говорит `ws2_32`, что будет работать с сетью, и просит версию 2.2. Без этого вызова `socket` вернёт `INVALID_SOCKET`, а `WSAGetLastError()` — 10093 («WSAStartup не выполнен»). В конце работы — `WSACleanup()`. Если в программе есть `net.h`, первая же её сетевая функция делает `WSAStartup` сама, и программа может звать функции сокетов после неё.
+
+Ошибки сокетов не возвращаются числом из функции: функция отвечает `SOCKET_ERROR` (-1) или `INVALID_SOCKET`, а номер ошибки говорит `WSAGetLastError()`. Номера, которые встречаются чаще всего:
+
+:= Номер | Имя | Что значит
+: 10035 | `WSAEWOULDBLOCK` | Неблокирующий сокет: сейчас нельзя, попробуйте позже (не ошибка)
+: 10048 | `WSAEADDRINUSE` | Порт уже занят
+: 10053 | `WSAECONNABORTED` | Соединение оборвала своя сторона
+: 10054 | `WSAECONNRESET` | Соединение оборвал собеседник
+: 10060 | `WSAETIMEDOUT` | Вышло время
+: 10061 | `WSAECONNREFUSED` | На том порту никто не слушает
+: 10093 | `WSANOTINITIALISED` | Не было `WSAStartup`
+: 11001 | `WSAHOST_NOT_FOUND` | Имя не найдено
+
+У ошибки 10054 есть второе лицо — на сокете UDP. Если такой сокет отправил пакет на порт, где никто не слушает, Windows по умолчанию сообщает об этом при следующем `recvfrom`: тот возвращает -1 с ошибкой 10054, хотя никакого соединения не было, а следующий пакет примется как обычно. `net_udp` эту привычку выключает, и свой сокет UDP выключают так же — одним вызовом `WSAIoctl` с кодом `SIO_UDP_CONNRESET` из `mswsock.h`:
+
+```
+#include <mswsock.h>
+
+BOOL off = FALSE;
+DWORD got;
+WSAIoctl(s, SIO_UDP_CONNRESET, &off, sizeof off, 0, 0, &got, 0, 0);   // пакет «в никуда» не ломает приём
+```
+
+## Клиент на сокетах
+
+Тот же вопрос веб-серверу, что в главе 19, но без библиотеки. Шагов становится больше, и каждый виден:
+
+```
+// head80: спросить у сервера заголовок по голому TCP, без библиотеки net
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdio.h>
+#include <string.h>
+
+int main(int argc, char **argv)
+{
+    const char *host = argc > 1 ? argv[1] : "github.com";
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        printf("Сокеты не запустились\n");
+        return 1;
+    }
+    struct addrinfo hints, *list = 0;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;            // и IPv4, и IPv6
+    hints.ai_socktype = SOCK_STREAM;
+    int e = getaddrinfo(host, "80", &hints, &list);
+    if (e != 0) {
+        printf("Имя %s не найдено: ошибка %d\n", host, e);
+        WSACleanup();
+        return 1;
+    }
+    SOCKET s = INVALID_SOCKET;
+    for (struct addrinfo *a = list; a; a = a->ai_next) {
+        s = socket(a->ai_family, a->ai_socktype, a->ai_protocol);
+        if (s == INVALID_SOCKET)
+            continue;
+        if (connect(s, a->ai_addr, (int)a->ai_addrlen) == 0) {
+            char ip[INET6_ADDRSTRLEN];
+            getnameinfo(a->ai_addr, (socklen_t)a->ai_addrlen, ip, sizeof ip, 0, 0, NI_NUMERICHOST);
+            printf("Соединились с %s\n", ip);
+            break;
+        }
+        closesocket(s);
+        s = INVALID_SOCKET;
+    }
+    freeaddrinfo(list);
+    if (s == INVALID_SOCKET) {
+        printf("Не соединились: ошибка %d\n", WSAGetLastError());
+        WSACleanup();
+        return 1;
+    }
+    char request[300];
+    int n = snprintf(request, sizeof request,
+                     "HEAD / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", host);
+    send(s, request, n, 0);
+    char buf[4096];
+    int got;
+    while ((got = recv(s, buf, sizeof buf - 1, 0)) > 0) {
+        buf[got] = 0;
+        printf("%s", buf);
+    }
+    closesocket(s);
+    WSACleanup();
+    return 0;
+}
+```
+
+```
+Соединились с 20.217.135.5
+HTTP/1.1 301 Moved Permanently
+Content-Length: 0
+Location: https://github.com/
+connection: close
+```
+
+`getaddrinfo` превращает имя и порт в список адресов, готовых для `connect`: подсказка `hints` говорит, что нужен поток TCP (`SOCK_STREAM`), а `AF_UNSPEC` — что подходят и IPv4, и IPv6. У имени может быть несколько адресов, поэтому цикл пробует их по очереди: создать сокет нужного семейства, соединиться, а не вышло — закрыть и взять следующий. Список освобождает `freeaddrinfo`. `getnameinfo` с `NI_NUMERICHOST` делает обратное — превращает адрес в строку цифр.
+
+`send` может отправить меньше, чем просили, — для короткого запроса это не случится, но для больших данных её зовут в цикле, пока не уйдёт всё (так делает `net_send`). `recv` возвращает, сколько байт пришло, 0 — собеседник закрыл соединение, -1 — ошибка. `Connection: close` в запросе просит сервер закрыть соединение после ответа, поэтому цикл чтения кончается сам.
+
+`connect` здесь ждёт столько, сколько ждёт Windows (около 21 секунды, если адрес молчит). Свой предел ставят так же, как это делает `net.h`: сокет переводят в неблокирующий режим (`ioctlsocket` с `FIONBIO`), зовут `connect` и ждут готовности в `select` с тайм-аутом.
+
+## Сервер только для своего компьютера
+
+Сервер слушает тот адрес, к которому привязан функцией `bind`. Адрес `INADDR_ANY` — все сети компьютера (так делает `net_listen`), `INADDR_LOOPBACK` — только `127.0.0.1`, куда можно прийти лишь с этого же компьютера (так делают `net_listen_local` и `net_http_start_local`). Такой сервер не видят соседи по сети, и брандмауэр Windows о нём не спрашивает: его просто нет снаружи. В программе на `net.h` для этого хватает одной строки `net_listen_local(9002)`; ниже — что стоит за ней, на голых сокетах.
+
+```
+// clock: сервер времени только для этого компьютера — порт 9002 на 127.0.0.1
+#include <winsock2.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+int main(void)
+{
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+    SOCKET server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_port = htons(9002);                       // числа в сокетах — в сетевом порядке байт
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);     // 127.0.0.1: из сети сюда не прийти
+    if (bind(server, (struct sockaddr *)&a, sizeof a) != 0 || listen(server, SOMAXCONN) != 0) {
+        printf("Порт не открылся: ошибка %d\n", WSAGetLastError());
+        return 1;
+    }
+    printf("Часы на 127.0.0.1:9002\n");
+    for (;;) {
+        struct sockaddr_in from;
+        int len = sizeof from;
+        SOCKET c = accept(server, (struct sockaddr *)&from, &len);
+        if (c == INVALID_SOCKET)
+            break;
+        time_t t = time(0);
+        char text[64];
+        int n = (int)strftime(text, sizeof text, "%d.%m.%Y %H:%M:%S\r\n", localtime(&t));
+        send(c, text, n, 0);
+        printf("Время спросил порт %d\n", ntohs(from.sin_port));
+        shutdown(c, SD_SEND);                       // «я всё сказал»
+        closesocket(c);
+    }
+    closesocket(server);
+    WSACleanup();
+    return 0;
+}
+```
+
+Адрес для `bind` складывается в структуру `sockaddr_in`: семейство `AF_INET`, порт и адрес. Порт и адрес записываются в сетевом порядке байт — старший байт вперёд, — поэтому `htons` для порта и `htonl` для адреса; обратно, при чтении, — `ntohs` и `ntohl`. Забыть `htons` — частая ошибка: порт 9002 без неё превратится в 10787. `listen` делает сокет слушающим, `SOMAXCONN` — длину очереди ждущих разрешает выбрать Windows. Для IPv6 то же самое делают со структурой `sockaddr_in6` и адресом `::1`. Для двух самых частых адресов в `ws2tcpip.h` есть готовые постоянные: `a6.sin6_addr = in6addr_loopback` — это `::1`, `in6addr_any` — все сети (для начального значения в объявлении — `IN6ADDR_LOOPBACK_INIT` и `IN6ADDR_ANY_INIT`). Любую другую запись адреса превращает в байты структуры `inet_pton(AF_INET6, "fe80::1", &a6.sin6_addr)`.
+
+Двое спросили время, и каждый получил строку вроде `04.11.2026 02:19:18`. В окне сервера:
+
+```
+Часы на 127.0.0.1:9002
+Время спросил порт 51820
+Время спросил порт 51821
+```
+
+Каждое соединение приходит со своего временного порта — его Windows выдаёт клиенту сама. Сервер ответил, сказал `shutdown(c, SD_SEND)` («больше ничего не будет») и закрыл сокет; клиент прочитал строку и получил конец потока.
+
+## WinHTTP: запрос по шагам
+
+`net_get` — это шесть вызовов WinHTTP. Напрямую их зовут, когда нужна настройка, которой нет в `net.h`. Строки WinHTTP — в UTF-16, поэтому имена, пути и заголовки пишутся как `L"…"`.
+
+```
+// robots: страница по HTTPS через WinHTTP — без библиотеки net
+#include <windows.h>
+#include <winhttp.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static void fail(const char *what)
+{
+    printf("%s: ошибка %lu\n", what, GetLastError());
+}
+
+int main(void)
+{
+    HINTERNET session = WinHttpOpen(L"robots/1.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, 0, 0, 0);
+    if (!session) { fail("WinHttpOpen"); return 1; }
+    HINTERNET conn = WinHttpConnect(session, L"www.google.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
+    HINTERNET req = conn ? WinHttpOpenRequest(conn, L"GET", L"/robots.txt", 0, WINHTTP_NO_REFERER,
+                                              WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE) : 0;
+    if (!req) { fail("Запрос не создан"); return 1; }
+    WinHttpSetTimeouts(req, 10000, 10000, 10000, 10000);
+    if (!WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !WinHttpReceiveResponse(req, 0)) {
+        fail("Нет ответа");
+        return 1;
+    }
+    DWORD status = 0, len = sizeof status;
+    WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                        WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX);
+    wchar_t type[200] = L"";
+    len = sizeof type;
+    WinHttpQueryHeaders(req, WINHTTP_QUERY_CONTENT_TYPE, WINHTTP_HEADER_NAME_BY_INDEX,
+                        type, &len, WINHTTP_NO_HEADER_INDEX);
+    printf("Ответ %lu, тип %ls\n", status, type);
+    size_t total = 0;
+    char buf[8192];
+    DWORD got;
+    while (WinHttpReadData(req, buf, sizeof buf - 1, &got) && got > 0) {
+        if (total == 0) {
+            buf[got < 120 ? got : 120] = 0;
+            printf("%s...\n", buf);
+        }
+        total += got;
+    }
+    printf("Всего %zu байт\n", total);
+    WinHttpCloseHandle(req);
+    WinHttpCloseHandle(conn);
+    WinHttpCloseHandle(session);
+    return 0;
+}
+```
+
+```
+Ответ 200, тип text/plain
+User-agent: *
+User-agent: Yandex
+Disallow: /search
+Allow: /search/about
+Allow: /search/howsearchworks
+Disallow: /sdch
+Di...
+Всего 6654 байт
+```
+
+:= Шаг | Функция | Что делает
+: 1 | `WinHttpOpen` | Сеанс: имя программы и прокси. `WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY` — прокси как в Windows (с Windows 8.1)
+: 2 | `WinHttpConnect` | Сервер и порт; соединения ещё нет, это только адресат
+: 3 | `WinHttpOpenRequest` | Метод и путь; `WINHTTP_FLAG_SECURE` — HTTPS
+: 4 | `WinHttpSendRequest` | Отправить заголовки и тело
+: 5 | `WinHttpReceiveResponse` | Дождаться начала ответа
+: 6 | `WinHttpQueryHeaders`, `WinHttpReadData` | Код, заголовки, тело кусками до пустого чтения
+
+Каждый шаг возвращает описатель `HINTERNET` или `FALSE`; номер ошибки — `GetLastError()`, числа от 12001 (их список — в главе 18). Описатели закрывает `WinHttpCloseHandle`, начиная с последнего. Сеанс дорог, его открывают один раз на всю программу и делают через него все запросы, как это устроено в `net.h`.
+
+Настройки ставит `WinHttpSetOption` — на сеанс (для всех запросов) или на запрос. Самые нужные:
+
+:= Настройка | Значение | Зачем
+: `WINHTTP_OPTION_DECOMPRESSION` | `WINHTTP_DECOMPRESSION_FLAG_ALL` | Принимать и распаковывать gzip и deflate (без неё сжатия нет)
+: `WINHTTP_OPTION_REDIRECT_POLICY` | `…_NEVER`, `…_ALWAYS` | Не ходить по переадресациям или ходить и с HTTPS на HTTP
+: `WINHTTP_OPTION_SECURE_PROTOCOLS` | `WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2` и другие | Какие версии TLS разрешены
+: `WINHTTP_OPTION_SECURITY_FLAGS` | `SECURITY_FLAG_IGNORE_…` | Принять сертификат, которому Windows не доверяет
+
+Последняя настройка — та, ради которой чаще всего спускаются к WinHTTP: свой сервер в своей сети на самодельном сертификате. `net.h` такой сервер отвергнет с ошибкой 12175, а запрос WinHTTP можно научить его принять:
+
+```
+DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID;
+WinHttpSetOption(req, WINHTTP_OPTION_SECURITY_FLAGS, &flags, sizeof flags);
+// дальше WinHttpSendRequest, как обычно
+```
+
+! Отключённая проверка сертификата превращает HTTPS в шифрование без уверенности, с кем говоришь: подменить сервер сможет любой на пути. Так делают только для своего сервера в своей сети и только для того запроса, который к нему идёт.
+
+Свои заголовки передаются в `WinHttpSendRequest` строкой `L"Имя: значение\r\n…"` с длиной -1 или добавляются заранее через `WinHttpAddRequestHeaders`. Тело запроса — параметры `optional` и `total_length` той же `WinHttpSendRequest`; длину `Content-Length` WinHTTP проставит сам.
+
+## Сеть в окне без зависаний: WSAAsyncSelect
+
+Оконная программа живёт в цикле сообщений: пока окно обрабатывает одно сообщение, другие ждут. Если внутри обработчика позвать `connect` или `recv`, которые ждут сеть, окно перестаёт перерисовываться и откликаться на мышь, а Windows через несколько секунд пишет в заголовке «Не отвечает». Второй поток — один выход. Другой, без потоков, — сделать так, чтобы сама сеть приходила окну сообщениями.
+
+`WSAAsyncSelect(сокет, окно, сообщение, события)` так и делает. После этого вызова сокет становится неблокирующим: `connect`, `recv`, `send` и `accept` больше никогда не ждут — либо делают дело сразу, либо отвечают ошибкой `WSAEWOULDBLOCK` («пока нельзя»). А когда у сокета что-то случилось, Windows кладёт в очередь окна сообщение: в `wParam` — сокет, в младшем слове `lParam` — какое событие, в старшем — номер ошибки, если она была. Достают их макросы `WSAGETSELECTEVENT(lp)` и `WSAGETSELECTERROR(lp)`.
+
+:= Событие | Когда приходит | Что делать
+: `FD_CONNECT` | `connect` закончился — удачно или нет | Проверить ошибку; если ноль — соединение есть
+: `FD_READ` | Пришли данные | Один раз позвать `recv`
+: `FD_WRITE` | Можно снова отправлять (после `WSAEWOULDBLOCK` в `send`) | Дослать остаток
+: `FD_ACCEPT` | Пришёл гость к слушающему сокету | Позвать `accept`
+: `FD_CLOSE` | Собеседник закрыл соединение | Дочитать, закрыть сокет
+
+Окно-собеседник для комнаты из главы 19 — журнал разговора, строка ввода и кнопка «Сказать»:
+
+```
+// roomwin: окно для комнаты из главы 19. Сеть приходит сообщениями окну,
+// поэтому окно не замирает ни при соединении, ни в ожидании строк.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <string.h>
+
+#define WM_SOCKET (WM_APP + 1)                  // своё сообщение: «у сокета новости»
+enum { ID_LOG = 1, ID_TEXT, ID_SEND };
+
+static HWND g_log, g_text, g_send;
+static SOCKET g_s = INVALID_SOCKET;
+static char g_part[8192];                       // начало строки, хвост которой ещё в пути
+static int g_part_len;
+
+static void add_log(const char *text)          // в конец журнала; "\n" -> "\r\n" для EDIT
+{
+    char line[8300];
+    int n = 0;
+    for (; *text && n < (int)sizeof line - 3; text++) {
+        if (*text == '\n')
+            line[n++] = '\r';
+        line[n++] = *text;
+    }
+    line[n] = 0;
+    int end = GetWindowTextLengthA(g_log);
+    SendMessageA(g_log, EM_SETSEL, end, end);
+    SendMessageA(g_log, EM_REPLACESEL, FALSE, (LPARAM)line);
+}
+
+static void start(HWND hwnd, const char *host)
+{
+    struct addrinfo hints, *a = 0;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, "9000", &hints, &a) != 0) {
+        add_log("Адрес комнаты не найден.\n");
+        return;
+    }
+    g_s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    // с этой строки сокет неблокирующий, а новости о нём приходят сообщением WM_SOCKET
+    WSAAsyncSelect(g_s, hwnd, WM_SOCKET, FD_CONNECT | FD_READ | FD_CLOSE);
+    if (connect(g_s, a->ai_addr, (int)a->ai_addrlen) != 0 && WSAGetLastError() != WSAEWOULDBLOCK)
+        add_log("Соединение не началось.\n");
+    else
+        add_log("Соединяемся...\n");
+    freeaddrinfo(a);
+}
+
+static void on_socket(LPARAM lp)
+{
+    int error = WSAGETSELECTERROR(lp);
+    switch (WSAGETSELECTEVENT(lp)) {
+    case FD_CONNECT:
+        if (error) {
+            add_log("Комната не отвечает.\n");
+            return;
+        }
+        add_log("Вы в комнате.\n");
+        send(g_s, "Окно\n", (int)strlen("Окно\n"), 0);     // первая строка — своё имя
+        EnableWindow(g_send, TRUE);
+        break;
+    case FD_READ: {
+        int n = recv(g_s, g_part + g_part_len, (int)sizeof g_part - 1 - g_part_len, 0);
+        if (n <= 0)
+            return;                             // WSAEWOULDBLOCK: всё уже прочитано
+        g_part_len += n;
+        g_part[g_part_len] = 0;
+        char *last = strrchr(g_part, '\n');     // показать только целые строки
+        if (last) {
+            char rest = last[1];
+            last[1] = 0;
+            add_log(g_part);
+            last[1] = rest;
+            g_part_len -= (int)(last + 1 - g_part);
+            memmove(g_part, last + 1, (size_t)g_part_len);
+        }
+        break;
+    }
+    case FD_CLOSE:
+        add_log("Комната закрылась.\n");
+        EnableWindow(g_send, FALSE);
+        closesocket(g_s);
+        g_s = INVALID_SOCKET;
+        break;
+    }
+}
+
+static void say(void)
+{
+    char text[1000];
+    int n = GetWindowTextA(g_text, text, (int)sizeof text - 1);
+    if (n == 0 || g_s == INVALID_SOCKET)
+        return;
+    text[n++] = '\n';
+    send(g_s, text, n, 0);                      // короткая строка уходит сразу целиком
+    text[n] = 0;
+    add_log("Я: ");
+    add_log(text);
+    SetWindowTextA(g_text, "");
+}
+
+static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_CREATE: {
+        HFONT font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        g_log = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+                                WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+                                0, 0, 0, 0, hwnd, (HMENU)ID_LOG, 0, 0);
+        g_text = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                 0, 0, 0, 0, hwnd, (HMENU)ID_TEXT, 0, 0);
+        g_send = CreateWindowExA(0, "BUTTON", "Сказать", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_DISABLED,
+                                 0, 0, 0, 0, hwnd, (HMENU)ID_SEND, 0, 0);
+        SendMessageA(g_log, WM_SETFONT, (WPARAM)font, TRUE);
+        SendMessageA(g_text, WM_SETFONT, (WPARAM)font, TRUE);
+        SendMessageA(g_send, WM_SETFONT, (WPARAM)font, TRUE);
+        return 0;
+    }
+    case WM_SIZE: {
+        int w = LOWORD(lp), h = HIWORD(lp);
+        MoveWindow(g_log, 8, 8, w - 16, h - 52, TRUE);
+        MoveWindow(g_text, 8, h - 36, w - 120, 28, TRUE);
+        MoveWindow(g_send, w - 104, h - 36, 96, 28, TRUE);
+        return 0;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wp) == ID_SEND)
+            say();
+        return 0;
+    case WM_SOCKET:
+        on_socket(lp);
+        return 0;
+    case WM_DESTROY:
+        if (g_s != INVALID_SOCKET)
+            closesocket(g_s);
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcA(hwnd, msg, wp, lp);
+}
+
+int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
+{
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+    WNDCLASSA wc = { 0 };
+    wc.lpfnWndProc = wnd_proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursorA(0, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.lpszClassName = "RoomWindow";
+    RegisterClassA(&wc);
+    HWND hwnd = CreateWindowExA(0, "RoomWindow", "Комната", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 520, 400, 0, 0, inst, 0);
+    start(hwnd, cmd && cmd[0] ? cmd : "localhost");
+    MSG m;
+    while (GetMessageA(&m, 0, 0, 0) > 0) {
+        if (!IsDialogMessageA(hwnd, &m)) {      // Enter в поле нажимает «Сказать», Tab ходит по полям
+            TranslateMessage(&m);
+            DispatchMessageA(&m);
+        }
+    }
+    WSACleanup();
+    return 0;
+}
+```
+
+Программа собирается командой `wcc roomwin.c` — в ней есть `WinMain` и нет `main`, поэтому получается оконная программа без консоли. Адрес комнаты берётся из командной строки (`roomwin 192.168.1.7`), без него — `localhost`.
+
+Ход событий такой. `start` находит адрес комнаты, создаёт сокет, ставит `WSAAsyncSelect` и зовёт `connect`. Тот сразу возвращает `WSAEWOULDBLOCK` — соединение пошло, ждать его окно не будет. Окно показывается и живёт; через миг в очередь приходит `WM_SOCKET` с событием `FD_CONNECT`, и `on_socket` отправляет имя и включает кнопку. Каждое `FD_READ` — один `recv`: если данных было больше, чем взял буфер, Windows пришлёт `FD_READ` ещё раз. Комната шлёт строки, но сеть режет поток где хочет, поэтому журнал получает только целые строки до последнего `\n`, а начало недошедшей ждёт в `g_part` следующего куска. Это заодно не даёт разрезать пополам букву UTF-8. `FD_CLOSE` значит, что комната закрылась.
+
+Запущенная комната, к ней — собеседник Борис из главы 19 и это окно. Борис сказал «Привет, окно! Как слышно?», и в журнале окна:
+
+```
+Соединяемся...
+Вы в комнате.
+Борис: Привет, окно! Как слышно?
+```
+
+А в окне комнаты вход и выход отметились как обычно — «Вход: Окно, 127.0.0.1:…» и «Выход: Окно», когда окно закрыли. Окну всё равно, что комната — консольная программа на `net.h`, а оно само — на голых сокетах: по сети ходят одни и те же строки.
+
+Текст в журнал и из поля ввода идёт через A-функции (`GetWindowTextA`, `EM_REPLACESEL` через `SendMessageA`) прямо в UTF-8: манифест каждой программы WinCC делает UTF-8 кодовой страницей её A-функций, поэтому кириллица из сети показывается как есть. Подробнее — в главе 7.
+
+! Короткую строку `send` неблокирующего сокета отправляет сразу целиком. Если программа шлёт много (файл, большой журнал), `send` может взять часть и вернуть `WSAEWOULDBLOCK` на остальное. Тогда остаток держат у себя и досылают, когда придёт `FD_WRITE`.
+
+`getaddrinfo` в `start` ждёт ответа DNS, и на это время окно стоит. Для `localhost` и адреса цифрами это мгновенно; для имени из интернета обычно доли секунды, но если сеть плохая, имя лучше искать во втором потоке и передавать окну готовый адрес через `PostMessageA`.
+
+## Другие способы ждать
+
+`WSAAsyncSelect` удобна, когда у программы есть окно. Для программ без окна в Windows есть ещё три способа ждать много сокетов сразу:
+
+:= Способ | Как ждёт | Когда удобен
+: `select` | Спит, пока в одном из наборов `fd_set` не будет готов сокет; до 64 сокетов, больше — свой `#define FD_SETSIZE` до `winsock2.h` | Простые серверы, как комната из главы 19
+: `WSAPoll` | То же над массивом `WSAPOLLFD` любой длины; флаги `POLLIN`, `POLLOUT` | Много соединений, код, похожий на Linux
+: `WSAEventSelect` | Связывает сокет с событием Windows; ждут `WSAWaitForMultipleEvents`, что случилось — `WSAEnumNetworkEvents` | Поток, который ждёт и сеть, и другие события Windows
+
+Все они живут в `winsock2.h` и работают и с сокетами, которые дал `net_handle`.
+
+## Итог
+
+Под `net.h` лежат обычные `winsock2.h`, `ws2tcpip.h` и `winhttp.h`, с теми же функциями, числами и структурами, что в Visual Studio; DLL к ним wcc находит сам. Работа с сокетами начинается с `WSAStartup`, ошибки читаются из `WSAGetLastError`, адреса ищет `getaddrinfo`, а числа в адресах пишутся в сетевом порядке через `htons` и `htonl`. Сокет, привязанный к `127.0.0.1`, даёт сервер, которого не видно из сети, — так устроены `net_listen_local` и `net_http_start_local`; для IPv6 тот же адрес `::1` даёт `in6addr_loopback`. Ошибку 10054 на своём сокете UDP выключает `SIO_UDP_CONNRESET` из `mswsock.h`. WinHTTP напрямую — это шесть шагов от сеанса до чтения тела и настройки, которых нет в библиотеке, в том числе приём своего сертификата. А `WSAAsyncSelect` превращает события сети в сообщения окна, и оконная программа говорит с сетью, ни на миг не замирая.

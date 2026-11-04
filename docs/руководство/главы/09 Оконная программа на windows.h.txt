@@ -1,0 +1,469 @@
+# Оконная программа на windows.h
+Консольная программа ведёт разговор сама: печатает вопрос, ждёт ответа, считает, печатает итог. Оконная устроена наоборот — она ничего не делает, пока Windows не сообщит, что что-то случилось: щёлкнули мышью, нажали клавишу, окно открыли из-под другого и его надо перерисовать. Эта глава строит такую программу на одном `windows.h`, без библиотек: от пустого окна до счётчика слов с меню, полем ввода, кнопкой и диалогом открытия файла. Тот же каркас лежит под любой программой Windows, в том числе под WUI из четвёртой части, поэтому его стоит понять один раз и как следует.
+
+## Консоль или окно
+
+В заголовке каждого `.exe` записана подсистема — пометка для Windows, как запускать программу. Консольной программе Windows даёт окно консоли (или ту консоль, из которой её запустили), и командная строка ждёт, пока программа не закончит. Оконной консоль не положена: двойной щелчок по ней не открывает чёрного окна, а командная строка, запустив её, сразу возвращается к приглашению.
+
+Какую пометку поставить, wcc решает сам по тому, какие функции есть в программе, а ключи и `#pragma` позволяют решить иначе.
+
+:= Что в программе | Как собрать | Что получится
+: `main` | `wcc prog.c` | консольная, вызывается `main`
+: `WinMain`, а `main` нет | `wcc prog.c` | оконная, вызывается `WinMain`
+: `main` | `wcc --gui prog.c` | оконная, вызывается `main`
+: `WinMain` | `wcc --console prog.c` | консольная, вызывается `WinMain`
+: и `main`, и `WinMain` | `wcc prog.c` или `--gui` | консольная с `main` или оконная с `WinMain`
+: любая из них | `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")` в тексте | оконная
+
+Строка, которую печатает wcc после сборки, всегда говорит, что получилось: «консольная программа» или «оконная программа». В окне WinCC то же выбирается видом программы: вид «Окно» — это ключ `--gui` (глава 3). Пары `wmain` и `wWinMain` работают так же, только получают командную строку в UTF-16 (глава 7).
+
+У `WinMain` четыре параметра, и в WinCC каждый из них имеет точное значение.
+
+:= Параметр | Что в нём
+: `HINSTANCE inst` | описатель самой программы, то же, что `GetModuleHandleA(NULL)`
+: `HINSTANCE prev` | всегда `NULL` — пережиток 16-разрядной Windows
+: `LPSTR cmd` | командная строка без имени программы, в UTF-8
+: `int show` | 10, то есть `SW_SHOWDEFAULT`: показать окно так, как просил запустивший
+
+Последний параметр стоит передать в первый `ShowWindow` как есть. Если программу запускают ярлыком со свойством «Свёрнутое в значок», именно через `SW_SHOWDEFAULT` Windows узнаёт, что окно надо показать свёрнутым.
+
+### Когда что выбирать
+
+Консоль — для утилит, обработки файлов, всего, что запускают из командной строки или из других программ. Окно — для программ, с которыми работает человек. Граница не глухая: консольная программа может открыть окно или сообщение, и консоль при этом останется рядом. Это удобно, пока программа пишется: окно работает, а `printf` печатает в консоль, что происходит внутри.
+
+```
+#include <windows.h>
+#include <stdio.h>
+
+int main(void)
+{
+    printf("Спрашиваю...\n");
+    int r = MessageBoxA(NULL, "Сохранить изменения?", "Вопрос", MB_YESNO | MB_ICONQUESTION);
+    printf("Ответ: %s\n", r == IDYES ? "да" : "нет");
+    return 0;
+}
+```
+
+`MessageBoxA` показывает стандартное окно-вопрос и ждёт, пока его закроют; возвращает она нажатую кнопку: `IDYES`, `IDNO`, `IDOK`, `IDCANCEL`. Флаги складывают набор кнопок (`MB_OK`, `MB_OKCANCEL`, `MB_YESNO`, `MB_YESNOCANCEL`) и значок (`MB_ICONINFORMATION`, `MB_ICONWARNING`, `MB_ICONERROR`, `MB_ICONQUESTION`).
+
+Обратный случай: `printf` в оконной программе ничего не показывает — печатать некуда. Строки не пропадают с ошибкой, их просто никто не видит. Если оконную программу запустить из консоли с перенаправлением вывода, `программа.exe > журнал.txt`, напечатанное окажется в файле.
+
+## Из чего состоит оконная программа
+
+У любой оконной программы три части.
+
+Класс окна — образец, по которому делаются окна: какая функция будет отвечать на сообщения, какой курсор показывать над окном, чем закрашивать фон, под каким именем образец записан. Класс регистрируют один раз, `RegisterClassA`.
+
+Окно — то, что видно на экране: рамка, заголовок, внутренняя часть. Его создаёт `CreateWindowExA` по имени класса и показывает `ShowWindow`. Кнопка, поле ввода и список — тоже окна, только вложенные в главное и сделанные по готовым классам Windows.
+
+Цикл сообщений — несколько строк в конце `WinMain`. Всё, что происходит с окнами программы, Windows превращает в сообщения и складывает в очередь. `GetMessageA` вынимает из очереди очередное сообщение (а если очередь пуста — ждёт, не тратя процессор), `TranslateMessage` превращает нажатия клавиш в символы, `DispatchMessageA` отдаёт сообщение функции того окна, которому оно адресовано.
+
+Эта функция — процедура окна — и есть программа. Она получает четыре значения: какое окно, какое сообщение, и два числа `wp` и `lp`, смысл которых зависит от сообщения. На нужные сообщения процедура отвечает сама, а всё остальное передаёт в `DefWindowProcA` — обработчик Windows, который умеет таскать окно за заголовок, менять размер за край, сворачивать и закрывать. Окно похоже на служащего с почтовым ящиком: Windows кладёт письма в ящик, цикл вынимает их по одному и передаёт служащему, а тот решает, на какие ответить самому, а какие переслать начальству.
+
+## Первое окно
+
+Самая короткая настоящая оконная программа — класс, окно, цикл и процедура, которая отвечает на два сообщения.
+
+```
+#include <windows.h>
+
+static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        RECT r;
+        GetClientRect(hwnd, &r);
+        DrawTextA(dc, "Привет, окно!", -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcA(hwnd, msg, wp, lp);
+}
+
+int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
+{
+    WNDCLASSA wc = { 0 };
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = wnd_proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = "FirstWindow";
+    RegisterClassA(&wc);
+
+    HWND hwnd = CreateWindowExA(0, "FirstWindow", "Первое окно", WS_OVERLAPPEDWINDOW,
+                                CW_USEDEFAULT, CW_USEDEFAULT, 400, 250, NULL, NULL, inst, NULL);
+    ShowWindow(hwnd, show);
+
+    MSG msg;
+    while (GetMessageA(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    return (int)msg.wParam;
+}
+```
+
+```
+> wcc окно.c
+Готово: окно.exe — оконная программа, 35328 байт, 125 мс
+```
+
+@ 09-первое-окно.png | Первое окно: класс, окно, цикл сообщений и ответ на WM_PAINT
+
+Программа меньше, чем «Привет, мир» в консоли, потому что не зовёт `printf`: из библиотеки Си в неё попало совсем немного. Всё остальное делает Windows.
+
+Несколько строк требуют пояснения. `WS_OVERLAPPEDWINDOW` — обычное окно с заголовком, рамкой и тремя кнопками; `CW_USEDEFAULT` отдаёт выбор места Windows. Фон `COLOR_WINDOW + 1` — системный цвет окна; единица прибавляется по давнему правилу Windows, чтобы номер цвета не совпал с пустым значением. `CS_HREDRAW | CS_VREDRAW` просят перерисовывать всё окно при каждом изменении размера — без них при растяжке перерисуется только добавленная полоса, и надпись перестанет стоять по центру.
+
+Самое важное — `WM_DESTROY`. Крестик в заголовке приходит в процедуру как `WM_CLOSE`; `DefWindowProcA` отвечает на него `DestroyWindow`, окно исчезает и присылает `WM_DESTROY`. Но цикл сообщений об этом ничего не знает и будет ждать дальше. `PostQuitMessage(0)` кладёт в очередь особое сообщение `WM_QUIT`, на нём `GetMessageA` возвращает 0, цикл кончается, `WinMain` возвращает код выхода. Если эту строку забыть, окно закроется, а программа останется работать невидимой — её будет видно только в диспетчере задач.
+
+! Надпись в первом окне жирная и угловатая: так выглядит шрифт по умолчанию, System, который Windows даёт каждому новому холсту. Свой шрифт выбирается через `CreateFontA` и `SelectObject` — так сделано в программе в конце главы.
+
+## Рисование: WM_PAINT
+
+Windows не хранит картинку окна. Когда часть окна открывается из-под другого, растягивается или разворачивается, Windows шлёт `WM_PAINT`, и программа должна нарисовать содержимое заново. Поэтому всё, что программа показывает, рисуется в одном месте — в ответе на `WM_PAINT`, по данным, которые программа хранит у себя.
+
+Рисуют между `BeginPaint` и `EndPaint`. `BeginPaint` даёт холст — описатель `HDC`, через который работают функции рисования, и отмечает окно как нарисованное. Без пары `BeginPaint`/`EndPaint` Windows будет слать `WM_PAINT` снова и снова.
+
+Когда данные изменились и окно нужно перерисовать, программа не рисует сразу, а просит: `InvalidateRect(hwnd, NULL, TRUE)` отмечает всё окно как устаревшее, и Windows пришлёт `WM_PAINT`, как только очередь освободится. Несколько таких просьб подряд сливаются в одну перерисовку.
+
+Текст рисуют `TextOutA` и `DrawTextA`, и кириллица в них работает: строки программы в UTF-8, и библиотека WinCC передаёт их в Windows в UTF-16 (подробно — в главе 7). Перья, кисти, шрифты, рисование без мерцания и сглаженная графика GDI+ — тема главы 12.
+
+## Сообщения, которые нужны почти всегда
+
+Сообщений в Windows сотни, но обычной программе хватает десятка. Что лежит в `wp` и `lp`, у каждого своё.
+
+:= Сообщение | Когда приходит | Что в wp и lp
+: `WM_CREATE` | окно создано, но ещё не показано | — ; здесь создают кнопки и поля
+: `WM_SIZE` | изменился размер | `LOWORD(lp)` — ширина, `HIWORD(lp)` — высота внутренней части
+: `WM_PAINT` | окно надо нарисовать | —
+: `WM_COMMAND` | выбран пункт меню, нажата кнопка, изменилось поле | `LOWORD(wp)` — номер, `HIWORD(wp)` — что случилось
+: `WM_LBUTTONDOWN`, `WM_LBUTTONUP` | левая кнопка мыши | `GET_X_LPARAM(lp)`, `GET_Y_LPARAM(lp)` — точка
+: `WM_MOUSEMOVE` | мышь двинулась над окном | то же
+: `WM_KEYDOWN` | нажата клавиша | `wp` — её код: `VK_LEFT`, `VK_F5`, `'A'`…
+: `WM_CHAR` | набран символ | `wp` — символ
+: `WM_TIMER` | сработал таймер | `wp` — номер таймера
+: `WM_CLOSE` | нажат крестик | — ; можно спросить «Сохранить?»
+: `WM_DESTROY` | окно уничтожено | — ; здесь `PostQuitMessage`
+
+`GET_X_LPARAM` и `GET_Y_LPARAM` лежат в `windowsx.h` — в отличие от `LOWORD`, они правильно передают отрицательные координаты, которые бывают, когда мышь захвачена и ушла за край окна.
+
+! `WM_CHAR` — единственное место, где манифест UTF-8 не помогает: в окно, созданное A-функциями, буква приходит одним байтом в старой кодировке Windows, а не в UTF-8 (русская «Ж» — байт 0xC6 кодировки 1251). Если программа сама принимает набор с клавиатуры, берите W-окно: класс через `RegisterClassExW`, окно через `CreateWindowExW`, остальное — в `DefWindowProcW`, цикл — `GetMessageW` и `DispatchMessageW`. Тогда `WM_CHAR` приносит символ UTF-16; так сделан калькулятор из примеров. Полям ввода разница не важна — кириллицу они принимают правильно и в A-окне.
+
+Таймер нужен для всего, что меняется само: часов, анимации, опроса. `SetTimer(hwnd, 1, 1000, NULL)` в `WM_CREATE` просит присылать `WM_TIMER` с номером 1 раз в секунду, `KillTimer(hwnd, 1)` останавливает. Например, часы в заголовке окна:
+
+```
+case WM_TIMER: {
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    char title[64];
+    sprintf(title, "Сейчас %02d:%02d:%02d", t.wHour, t.wMinute, t.wSecond);
+    SetWindowTextA(hwnd, title);
+    return 0;
+}
+```
+
+## Меню
+
+Полоса меню собирается из выпадающих меню, а те — из пунктов. У каждого пункта свой номер; выбор пункта приходит в процедуру как `WM_COMMAND`, и `LOWORD(wp)` — его номер.
+
+```
+enum { ID_TEXT = 100, ID_CLEAR, ID_OPEN, ID_EXIT, ID_ABOUT };
+
+static void make_menu(HWND hwnd)
+{
+    HMENU bar = CreateMenu(), file = CreatePopupMenu(), help = CreatePopupMenu();
+    AppendMenuA(file, MF_STRING, ID_OPEN, "&Открыть…");
+    AppendMenuA(file, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(file, MF_STRING, ID_EXIT, "&Выход");
+    AppendMenuA(help, MF_STRING, ID_ABOUT, "&О программе");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&Файл");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)help, "&Справка");
+    SetMenu(hwnd, bar);
+}
+```
+
+Знак `&` подчёркивает следующую букву: пункт «&Файл» открывается клавишами Alt+Ф. Меню, отданное окну через `SetMenu`, принадлежит окну и уничтожается вместе с ним — освобождать его не нужно. Галочку у пункта ставит `CheckMenuItem`, серым пункт делает `EnableMenuItem`, а меню по правой кнопке мыши показывает `TrackPopupMenu`.
+
+## Кнопки, поля и другие элементы
+
+Кнопка — это маленькое окно готового класса Windows, вложенное в главное. Создаётся она той же `CreateWindowExA`, только с именем класса из таблицы, стилем `WS_CHILD | WS_VISIBLE` и родителем — главным окном. На месте меню у вложенного окна стоит его номер: `(HMENU)ID_CLEAR`.
+
+:= Класс | Что это | Полезные стили
+: `BUTTON` | кнопка, флажок, переключатель, рамка | `BS_PUSHBUTTON`, `BS_AUTOCHECKBOX`, `BS_AUTORADIOBUTTON`, `BS_GROUPBOX`
+: `EDIT` | поле ввода | `ES_MULTILINE`, `ES_PASSWORD`, `ES_NUMBER`, `ES_READONLY`, `ES_AUTOHSCROLL`
+: `STATIC` | надпись | `SS_CENTER`, `SS_RIGHT`
+: `LISTBOX` | список | `LBS_NOTIFY`, `WS_VSCROLL`
+: `COMBOBOX` | раскрывающийся список | `CBS_DROPDOWNLIST`
+
+Полоса хода, ползунок, строка состояния и счётчик со стрелками объявлены в `commctrl.h` (приложение В). Вид у всех элементов современный, как в остальной Windows: в каждую программу WinCC вшит манифест Common Controls 6, ничего включать не нужно.
+
+О событиях элемент сообщает родителю тем же `WM_COMMAND`: `LOWORD(wp)` — номер элемента, `HIWORD(wp)` — код события: `BN_CLICKED` у кнопки, `EN_CHANGE` у поля, когда в нём изменился текст, `LBN_SELCHANGE` у списка. В `lp` лежит описатель самого элемента.
+
+Шрифт элементы берут старый системный, пока им не дадут другой сообщением `WM_SETFONT`. Перемещает элемент `MoveWindow` — обычно в ответ на `WM_SIZE`, чтобы элементы следовали за размером окна. Короткие обёртки над сообщениям элементов собраны в `windowsx.h`: `Edit_GetText`, `ListBox_AddString`, `ComboBox_GetCurSel`, `Button_GetCheck` и другие.
+
+Текст из элемента читают `GetWindowTextA`, и здесь есть подвох. Благодаря манифесту текст приходит в UTF-8, а в UTF-8 русская буква занимает два байта. `GetWindowTextLengthA` возвращает длину именно в байтах UTF-8 — для строки «Привет, мир» это 20, хотя букв 11, — и буфер нужен на единицу больше этого числа. Если буфер меньше, Windows режет текст посреди буквы, и конец строки получается испорченным.
+
+! Переход по элементам клавишей Tab в обычном окне сам собой не работает: его даёт `IsDialogMessageA(hwnd, &msg)` в цикле сообщений (если она вернула не 0, сообщение уже обработано) и стиль `WS_TABSTOP` у элементов.
+
+## Диалог открытия файла
+
+Окна «Открыть» и «Сохранить как» — те же, что во всех программах Windows, — дают `GetOpenFileNameA` и `GetSaveFileNameA`. Программа заполняет структуру `OPENFILENAMEA` и получает выбранный путь.
+
+```
+static void open_file(HWND hwnd)
+{
+    char name[MAX_PATH] = "";
+    OPENFILENAMEA ofn = { 0 };
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = "Текст\0*.txt;*.c;*.h;*.md\0Все файлы\0*.*\0";
+    ofn.lpstrFile = name;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (GetOpenFileNameA(&ofn))
+        load(hwnd, name);
+}
+```
+
+Фильтр — необычная строка: пары «подпись, маски», разделённые нулевыми символами, а в конце ещё один ноль (последний добавит сам компилятор, закрывая строку). `GetOpenFileNameA` возвращает 0, если человек нажал «Отмена». Путь приходит в UTF-8 и годится прямо в `fopen` — кириллица в именах папок и файлов работает. Для сохранения берут `GetSaveFileNameA` с флагом `OFN_OVERWRITEPROMPT`: тогда Windows сама спросит, заменить ли существующий файл. Выбор цвета и шрифта дают `ChooseColorA` и `ChooseFontA`.
+
+## Программа целиком
+
+Счётчик слов собирает всё сказанное вместе: меню, многострочное поле, кнопку «Очистить», строку итогов внизу, которую программа рисует сама, и открытие файла — из меню или из командной строки. Итоги пересчитываются на каждое изменение текста.
+
+```
+// Счётчик слов: меню, поле для текста, кнопка, строка итогов, диалог открытия файла.
+#include <windows.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+enum { ID_TEXT = 100, ID_CLEAR, ID_OPEN, ID_EXIT, ID_ABOUT };
+
+static HWND g_text, g_clear;
+static HFONT g_font;
+static int g_dpi = 96;
+static int g_lines, g_words, g_chars;
+
+static int px(int n) { return n * g_dpi / 96; }          // точки при 100 % -> точки экрана
+
+// Считает строки, слова и знаки в тексте поля (текст в UTF-8)
+static void count(void)
+{
+    int size = GetWindowTextLengthA(g_text) + 1;          // длина в байтах UTF-8
+    char *s = malloc(size);
+    GetWindowTextA(g_text, s, size);
+    g_lines = s[0] ? 1 : 0;
+    g_words = g_chars = 0;
+    int in_word = 0;
+    for (unsigned char *p = (unsigned char *)s; *p; p++) {
+        if (*p == '\n') g_lines++;
+        int space = *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n';
+        if (!space && (*p & 0xC0) != 0x80) g_chars++;    // первый байт буквы
+        if (!space && !in_word) g_words++;
+        in_word = !space;
+    }
+    free(s);
+}
+
+// Читает файл в поле; поле понимает переводы строк только как \r\n
+static void load(HWND hwnd, const char *name)
+{
+    FILE *f = fopen(name, "rb");
+    if (!f) {
+        MessageBoxA(hwnd, name, "Не открыть файл", MB_ICONWARNING);
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *raw = malloc(n + 1), *text = malloc(2 * n + 1), *q = text;
+    n = (long)fread(raw, 1, n, f);
+    fclose(f);
+    for (long i = 0; i < n; i++) {
+        if (raw[i] == '\n' && (i == 0 || raw[i - 1] != '\r')) *q++ = '\r';
+        *q++ = raw[i];
+    }
+    *q = 0;
+    SetWindowTextA(g_text, text);
+    free(raw);
+    free(text);
+    count();                        // многострочное поле не шлёт EN_CHANGE на SetWindowText
+    InvalidateRect(hwnd, NULL, TRUE);
+}
+
+static void open_file(HWND hwnd)
+{
+    char name[MAX_PATH] = "";
+    OPENFILENAMEA ofn = { 0 };
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = "Текст\0*.txt;*.c;*.h;*.md\0Все файлы\0*.*\0";
+    ofn.lpstrFile = name;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (GetOpenFileNameA(&ofn))
+        load(hwnd, name);
+}
+
+static void make_menu(HWND hwnd)
+{
+    HMENU bar = CreateMenu(), file = CreatePopupMenu(), help = CreatePopupMenu();
+    AppendMenuA(file, MF_STRING, ID_OPEN, "&Открыть…");
+    AppendMenuA(file, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(file, MF_STRING, ID_EXIT, "&Выход");
+    AppendMenuA(help, MF_STRING, ID_ABOUT, "&О программе");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&Файл");
+    AppendMenuA(bar, MF_POPUP, (UINT_PTR)help, "&Справка");
+    SetMenu(hwnd, bar);
+}
+
+static void paint(HWND hwnd)
+{
+    PAINTSTRUCT ps;
+    HDC dc = BeginPaint(hwnd, &ps);
+    RECT r;
+    GetClientRect(hwnd, &r);
+    RECT bar = { 0, r.bottom - px(36), r.right, r.bottom };
+    HBRUSH b = CreateSolidBrush(RGB(232, 238, 246));
+    FillRect(dc, &bar, b);
+    DeleteObject(b);
+
+    char line[128];
+    sprintf(line, "Строк: %d     Слов: %d     Знаков: %d", g_lines, g_words, g_chars);
+    HGDIOBJ old = SelectObject(dc, g_font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(40, 60, 90));
+    bar.left += px(12);
+    DrawTextA(dc, line, -1, &bar, DT_SINGLELINE | DT_VCENTER);
+    SelectObject(dc, old);
+    EndPaint(hwnd, &ps);
+}
+
+static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg) {
+    case WM_CREATE:
+        g_font = CreateFontA(-px(15), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
+                             CLEARTYPE_QUALITY, 0, "Segoe UI");
+        g_text = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
+                                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+                                 0, 0, 0, 0, hwnd, (HMENU)ID_TEXT, NULL, NULL);
+        g_clear = CreateWindowExA(0, "BUTTON", "Очистить", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                                  0, 0, 0, 0, hwnd, (HMENU)ID_CLEAR, NULL, NULL);
+        SendMessageA(g_text, WM_SETFONT, (WPARAM)g_font, TRUE);
+        SendMessageA(g_clear, WM_SETFONT, (WPARAM)g_font, TRUE);
+        make_menu(hwnd);
+        return 0;
+    case WM_SIZE: {                                       // новый размер — в lp
+        int w = LOWORD(lp), h = HIWORD(lp);
+        MoveWindow(g_text, px(12), px(12), w - px(24), h - px(36) - px(64), TRUE);
+        MoveWindow(g_clear, w - px(132), h - px(36) - px(44), px(120), px(32), TRUE);
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {                             // кто прислал
+        case ID_TEXT:
+            if (HIWORD(wp) == EN_CHANGE) {                // что случилось
+                count();
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+            return 0;
+        case ID_CLEAR:
+            SetWindowTextA(g_text, "");
+            count();
+            InvalidateRect(hwnd, NULL, TRUE);
+            SetFocus(g_text);
+            return 0;
+        case ID_OPEN:
+            open_file(hwnd);
+            return 0;
+        case ID_EXIT:
+            DestroyWindow(hwnd);
+            return 0;
+        case ID_ABOUT:
+            MessageBoxA(hwnd, "Считает строки, слова и знаки.\nСобрано компилятором WinCC.",
+                        "О программе", MB_OK | MB_ICONINFORMATION);
+            return 0;
+        }
+        break;
+    case WM_PAINT:
+        paint(hwnd);
+        return 0;
+    case WM_DESTROY:
+        DeleteObject(g_font);
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcA(hwnd, msg, wp, lp);
+}
+
+int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
+{
+    SetProcessDPIAware();                                 // рисовать чётко на любом масштабе
+    g_dpi = GetDpiForSystem();
+
+    WNDCLASSEXA wc = { sizeof(wc) };
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = wnd_proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
+    wc.hIcon = LoadIconA(NULL, IDI_APPLICATION);
+    wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    wc.lpszClassName = "WordCounter";
+    RegisterClassExA(&wc);
+
+    HWND hwnd = CreateWindowExA(0, "WordCounter", "Счётчик слов", WS_OVERLAPPEDWINDOW,
+                                CW_USEDEFAULT, CW_USEDEFAULT, px(560), px(400), NULL, NULL, inst, NULL);
+    ShowWindow(hwnd, show);
+    UpdateWindow(hwnd);
+
+    if (cmd[0]) {                                         // файл в командной строке
+        char name[MAX_PATH];
+        lstrcpynA(name, cmd[0] == '"' ? cmd + 1 : cmd, MAX_PATH);
+        char *quote = strchr(name, '"');
+        if (quote) *quote = 0;
+        load(hwnd, name);
+    }
+
+    MSG msg;
+    while (GetMessageA(&msg, NULL, 0, 0) > 0) {
+        TranslateMessage(&msg);
+        DispatchMessageA(&msg);
+    }
+    return (int)msg.wParam;
+}
+```
+
+```
+> wcc счётчик.c
+Готово: счётчик.exe — оконная программа, 97280 байт, 188 мс
+> счётчик.exe пример.txt
+```
+
+@ 09-счётчик-слов.png | Счётчик слов: меню, многострочное поле, кнопка и строка итогов, нарисованная программой
+
+Устройство программы видно по процедуре окна. В `WM_CREATE` создаются шрифт, поле, кнопка и меню — с нулевыми размерами, потому что места им раздаёт `WM_SIZE`, который приходит сразу после создания и потом при каждом изменении размера. `WM_COMMAND` разбирает, кто прислал сообщение (`LOWORD(wp)`) и что случилось (`HIWORD(wp)`). Строку итогов рисует `paint` поверх фона окна — поле и кнопка рисуют себя сами, программе о них заботиться не нужно.
+
+Три места стоит разобрать отдельно, потому что на них спотыкаются чаще всего.
+
+`SetProcessDPIAware` и функция `px`. На экране с масштабом 150 % Windows растягивает окно программы, которая о масштабе не знает, — и всё в нём становится размытым. Программа, вызвавшая `SetProcessDPIAware`, говорит: «масштаб я учту сама», и тогда все размеры в точках надо умножать на `GetDpiForSystem() / 96`. Это и делает `px`: на обычном экране она возвращает число как есть, на полуторном — в полтора раза больше.
+
+Переводы строк. Многострочное поле понимает только пару `\r\n`; файл с одними `\n` (так сохраняют многие редакторы) покажется одной длинной строкой. Поэтому `load` вставляет `\r` перед каждым одиноким `\n`.
+
+`EN_CHANGE`. Поле присылает его, когда текст правит человек, но многострочное поле молчит, когда текст поменяла сама программа через `SetWindowTextA`. Поэтому после загрузки файла и очистки `count` вызывается напрямую.
+
+Командная строка разбирается по-простому: если имя файла в кавычках, кавычки снимаются. Этого хватает, чтобы открыть файл перетаскиванием на значок программы или через «Открыть с помощью» — Windows передаёт путь именно так.
+
+## Итог
+
+Оконная программа — это класс окна, окно, цикл сообщений и процедура, которая отвечает на нужные сообщения и отдаёт остальное `DefWindowProcA`. Рисуют только в `WM_PAINT`, а когда данные изменились, просят перерисовку через `InvalidateRect`. Кнопки, поля и списки — вложенные окна готовых классов, о событиях они сообщают через `WM_COMMAND`. wcc сам делает программу оконной, если в ней есть `WinMain` и нет `main`, а `--gui` и `--console` позволяют решить иначе. Все A-функции окон принимают и возвращают UTF-8; длина текста в элементах считается в байтах.
+
+Следующие главы расширяют этот каркас в стороны: глава 10 — как вынести часть программы в свою DLL, глава 11 — как звать функции Windows, которых нет в заголовках, глава 12 — как рисовать красиво. А если нужен готовый современный вид без ручной раскладки элементов, его дают WUI из четвёртой части.

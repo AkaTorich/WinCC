@@ -1,0 +1,292 @@
+# Приложение Д. Справочник net.h
+Все функции, типы и правила библиотеки сети `net.h`: что принимает каждая функция, что возвращает, что делает при ошибке и что после неё освобождать. Рассказ с примерами — в главах 18–21.
+
+## Подключение
+
+:= Что | Как
+: Подключить | `#include <net.h>`; wcc сам собирает с программой `lib\net\*.c` и выбрасывает неиспользуемое
+: Что включает `net.h` | `winsock2.h`, `ws2tcpip.h`, `winhttp.h`, `stddef.h`
+: DLL готовой программы | `ws2_32.dll`, `winhttp.dll` (есть в каждой Windows)
+: Размер программы | Около 80–120 КБ
+: Тексты | Адреса, имена, пути, тексты ошибок — UTF-8
+: Запуск сокетов | `WSAStartup` делает первая сетевая функция библиотеки, один раз на программу
+
+## Типы
+
+### NetResponse — ответ на запрос HTTP
+
+:= Поле | Тип | Что в нём
+: `status` | `int` | Код ответа (200, 404…); 0 — ответа нет
+: `body` | `char *` | Тело ответа; после него всегда байт 0. При ошибке — 0
+: `size` | `size_t` | Длина тела в байтах (без завершающего 0)
+: `headers` | `char *` | Заголовки ответа строками `Имя: значение\r\n`, без строки состояния
+: `error` | `const char *` | 0 — сервер ответил; иначе текст ошибки
+: `own` | `void *` | Служебное
+
+### NetHttpRequest — запрос к своему серверу
+
+:= Поле | Тип | Что в нём
+: `method` | `const char *` | `GET`, `POST`, `HEAD`…
+: `path` | `const char *` | Путь без `?…`, `%XX` раскрыты, `+` не тронут
+: `query` | `const char *` | Всё после `?` без `#…`, как пришло; `""`, если нет
+: `headers` | `const char *` | Заголовки запроса строками `Имя: значение\r\n`
+: `body` | `const char *` | Тело запроса; после него байт 0
+: `size` | `size_t` | Длина тела
+: `peer` | `const char *` | Кто спросил: `адрес:порт`
+: `own` | `void *` | Служебное
+
+Все поля живут до возврата из обработчика.
+
+### Прочие типы
+
+:= Тип | Что это
+: `NetSocket` | Соединение TCP, слушающий сокет или сокет UDP; содержимое закрыто. Внутри — сокет Windows и буфер чтения строк 4 КБ
+: `NetHttpServer` | Запущенный веб-сервер; содержимое закрыто
+: `NetProgress` | `void (*)(size_t done, size_t total, void *user)` — функция хода загрузки
+: `NetHttpHandler` | `void (*)(NetHttpRequest *request, void *user)` — обработчик запросов сервера
+
+## Ошибки
+
+:= Функция | Что возвращает
+: `const char *net_error(void)` | Последнюю ошибку текущего потока; `""` — ошибки не было
+
+- У каждого потока своя ошибка. Текст — не длиннее 511 байт.
+- Ошибка из Windows пишется как `что: слова Windows (номер)`; слова — на языке системы.
+- Функции, которые при успехе стирают ошибку (делают её `""`): `net_get`, `net_post`, `net_post_text`, `net_request`, `net_download`, `net_connect`, `net_listen`, `net_listen_local`, `net_accept`, `net_send`, `net_send_text`, `net_printf`, `net_recv`, `net_recv_all`, `net_recv_line`, `net_udp`, `net_udp_send`, `net_udp_recv`, `net_resolve`.
+- Остальные при успехе прежнюю ошибку не трогают. Проверять `net_error()` нужно только после того, как функция сообщила о неудаче своим возвратом.
+
+### Тексты ошибок библиотеки
+
+:= Текст | Откуда
+: `Не хватило памяти` | Любая функция, которой не хватило памяти
+: `Сеть не запускается: …` | Первая сетевая функция: `WSAStartup` не удался
+: `WinHTTP не открылся: …` | Первый запрос HTTP: сеанс WinHTTP не создан
+: `Адрес не понят: адрес` | Запрос HTTP: адрес без `http://` или `https://` или с ошибкой
+: `Слишком длинное имя сервера: адрес` | Запрос HTTP: имя сервера длиннее 255 знаков
+: `Нет соединения: …` | Запрос HTTP: `WinHttpConnect` отказал
+: `Запрос не создан: …` | Запрос HTTP: `WinHttpOpenRequest` отказал
+: `адрес: …` | Запрос HTTP: не отправлен или нет ответа (имя, соединение, время, сертификат)
+: `Ответ оборвался: …` | Запрос HTTP: тело пришло не до конца
+: `Файл не пишется: …` | `net_download`: ошибка записи
+: `Сервер ответил N: адрес` | `net_download`: код ответа не 2xx
+: `путь: …` | `net_download`: файл `путь.part` не создан или не встал на место файла; `net_http_reply_file`: файл не прочитан
+: `имя: …` | `net_resolve`, `net_connect`, `net_udp_send`: имя не найдено
+: `имя:порт: …` | `net_connect`: ни один адрес не соединился
+: `Порт N занят` | `net_listen`, `net_listen_local`, `net_udp`, `net_http_start`, `net_http_start_local`, `net_http_run`
+: `Порт не открылся: …` | `net_listen`, `net_listen_local`, `net_udp`: прочие ошибки `bind` и `listen`
+: `Сокет не создан: …` | `net_listen`, `net_listen_local`, `net_udp`
+: `Соединение не принято: …` | `net_accept`
+: `Не отправилось: …` | `net_send`, `net_send_text`, `net_printf`, `net_udp_send`
+: `Не получилось прочитать: …` | `net_recv`, `net_recv_all`, `net_recv_line`, `net_udp_recv`
+: `Соединение закрыто раньше, чем всё пришло` | `net_recv_all`
+: `Ничего не пришло` | `net_udp_recv`: истёк `net_socket_timeout`
+: `Имя компьютера: …` | `net_hostname`
+: `Поток сервера не создан: …` | `net_http_start`
+
+### Частые номера в скобках
+
+:= Номер | Что значит
+: 12002 | WinHTTP: вышло время ожидания
+: 12007 | WinHTTP: имя сервера не найдено
+: 12029 | WinHTTP: сервер не принимает соединений
+: 12030 | WinHTTP: соединение оборвалось
+: 12152 | WinHTTP: ответ не по правилам HTTP
+: 12175 | WinHTTP: ошибка безопасности (сертификат)
+: 10040 | Пакет UDP больше буфера приёма
+: 10054 | Собеседник оборвал соединение TCP
+: 10060 | Вышло время (соединение или чтение)
+: 10061 | На порту никто не слушает
+: 11001 | Имя не найдено
+
+## HTTP и HTTPS
+
+:= Функция | Возвращает | Подробности
+: `NetResponse *net_get(const char *url)` | Ответ; 0 — только если нет памяти | Метод `GET`
+: `NetResponse *net_post(const char *url, const char *type, const void *data, size_t size)` | Ответ; 0 — нет памяти | Метод `POST`; `type` — заголовок `Content-Type`, 0 — `application/octet-stream`
+: `NetResponse *net_post_text(const char *url, const char *type, const char *text)` | Ответ; 0 — нет памяти | `POST` строки, размер — `strlen(text)`; `type` 0 — `text/plain; charset=utf-8`; `text` не 0
+: `NetResponse *net_request(const char *method, const char *url, const char *headers, const void *data, size_t size)` | Ответ; 0 — нет памяти | Любой метод, 0 — `GET`; `headers` — строки `Имя: значение\r\n` или 0; `data` 0 при `size` 0
+: `const char *net_header(NetResponse *r, const char *name)` | Значение заголовка или 0 | Имя без учёта регистра; пробелы по краям значения сняты; строка живёт до `net_free(r)`; `r` может быть 0
+: `void net_free(NetResponse *r)` | — | Освобождает ответ со всем, что в нём и что выдал `net_header`; 0 можно
+: `int net_download(const char *url, const char *path)` | 1 — сохранён; 0 — нет | Тело пишется в `путь.part` по мере прихода; успех — только код 2xx, тогда `путь.part` заменяет `путь`; при неудаче `путь.part` стирается, прежний `путь` не тронут
+: `void net_on_progress(NetProgress fn, void *user)` | — | Функция хода для всех следующих запросов этого потока; 0 — убрать
+: `void net_set_timeout(int ms)` | — | Предел ожидания для всех потоков; сначала 30 000; 0 или меньше — без предела
+: `void net_set_agent(const char *agent)` | — | Заголовок `User-Agent` для всех запросов; сначала `WinCC net`; только ASCII (кириллица в заголовке портится); 0 или `""` — снова `WinCC net`
+
+### Поведение запросов
+
+:= Что | Как
+: Ответ при ошибке | `error` — текст, `status` — 0, `body` — 0, `headers` — то, что успело прийти, или 0
+: Ответ сервера с кодом 4xx или 5xx | Не ошибка: `error` — 0, тело — страница сервера
+: Сеанс | Один сеанс WinHTTP на всю программу, общий для всех потоков
+: Прокси | Как настроен в Windows (`WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY`; до Windows 8.1 — из реестра)
+: Сжатие | Сервер получает `Accept-Encoding: gzip, deflate`; тело распаковывается; заголовки `Content-Encoding` и `Content-Length` сжатого вида из ответа убираются
+: Переадресации | 301, 302, 303, 307, 308 проходятся сами; с HTTPS на HTTP — нет (возвращается сам ответ 3xx)
+: Шифрование | TLS 1.2 и 1.3 (на Windows без TLS 1.3 — только 1.2); сертификат проверяется, отключить нельзя
+: Cookies | Хранятся в сеансе и возвращаются серверу до конца работы программы
+: Заголовки, которые ставит библиотека | `Host`, `Content-Length` (при теле), `Accept-Encoding`, `User-Agent`
+: Адрес | Должен начинаться с `http://` или `https://`; часть после `#` не отправляется
+: Тайм-аут | Отдельно на поиск имени, соединение, отправку, начало ответа и каждый кусок тела; ожидание ответа WinHTTP округляет вверх до шага в 4 с
+: Тело в памяти | Любого размера, пока хватает памяти
+
+### Ход загрузки
+
+:= Что | Как
+: Когда зовётся | После каждого принятого куска тела, кусок — до 64 КБ
+: В каком потоке | В том, который делает запрос
+: `done` | Сколько байт тела уже пришло
+: `total` | Сколько ожидается по `Content-Length`; 0 — неизвестно (сжатое тело или тело частями)
+: Для каких запросов | Все запросы потока: `net_get`, `net_post`, `net_post_text`, `net_request`, `net_download`
+
+### net_download
+
+:= Случай | Итог
+: Код 2xx, тело записано | 1, `путь.part` переименован в `путь`
+: Нет ответа | 0, ошибка запроса, `путь.part` стёрт
+: Код не 2xx | 0, `Сервер ответил N: адрес`, `путь.part` стёрт
+: Ошибка записи файла | 0, `Файл не пишется: …`, `путь.part` стёрт
+: Файл `путь` уже был | При успехе заменяется новым; при любой неудаче остаётся как был
+: Файл `путь.part` уже был | Перезаписывается
+
+## Адреса с %XX
+
+:= Функция | Возвращает | Подробности
+: `char *net_url_encode(const char *text)` | Новую строку, `free`; 0 — нет памяти | Латиница, цифры, `- _ . ~` — как есть; пробел — `+`; прочие байты — `%XX` (заглавные цифры)
+: `char *net_url_decode(const char *text)` | Новую строку, `free`; 0 — нет памяти | `+` — пробел; `%XX` — байт; неверная запись `%` остаётся как есть
+
+`text` не может быть 0.
+
+## TCP
+
+:= Функция | Возвращает | Подробности
+: `NetSocket *net_connect(const char *host, int port)` | Соединение или 0 | Имя или адрес, IPv4 или IPv6; адреса имени пробуются по очереди; на каждый — предел `net_set_timeout` (0 — как у Windows, около 21 с)
+: `NetSocket *net_listen(int port)` | Слушающий сокет или 0 | Все сети компьютера, IPv6 и IPv4 одним сокетом (без IPv6 — только IPv4); порт 0 — любой свободный
+: `NetSocket *net_listen_local(int port)` | Слушающий сокет или 0 | Только `127.0.0.1` (IPv4): прийти можно лишь с этого компьютера, брандмауэр не спрашивает; порт 0 — любой свободный; `net_peer` — `127.0.0.1:порт`
+: `NetSocket *net_accept(NetSocket *server)` | Новое соединение или 0 | Ждёт без предела
+: `int net_send(NetSocket *s, const void *data, int size)` | `size` или -1 | Отправляет всё, при надобности по частям
+: `int net_send_text(NetSocket *s, const char *text)` | Длину или -1 | `net_send` строки без завершающего 0
+: `int net_printf(NetSocket *s, const char *format, ...)` | Число байт или -1 | Как `printf`; длина текста не ограничена
+: `int net_recv(NetSocket *s, void *buffer, int size)` | Больше 0 — сколько пришло; 0 — закрыто; -1 — ошибка | Сначала отдаёт запас, оставшийся от `net_recv_line`
+: `int net_recv_all(NetSocket *s, void *buffer, int size)` | 1 или 0 | Ждёт ровно `size` байт
+: `char *net_recv_line(NetSocket *s)` | Строку, `free`; 0 — закрыто или ошибка | Без `\n` и без `\r` перед ним; длина не ограничена; последняя строка без `\n` отдаётся при закрытии
+: `int net_ready(NetSocket *s, int ms)` | 1 или 0 | 1 — есть что читать, есть запас или собеседник закрыл; 0 — прошло `ms` (и при ошибке); `ms` 0 — не ждать
+: `void net_socket_timeout(NetSocket *s, int ms)` | — | Предел для каждого чтения и отправки; 0 или меньше — без предела
+: `int net_local_port(NetSocket *s)` | Свой порт или 0 | Нужен после `net_listen(0)`, `net_listen_local(0)` и `net_udp(0)`
+: `const char *net_peer(NetSocket *s)` | Строку в самом сокете | `1.2.3.4:80`, `[::1]:80`; IPv4 внутри IPv6 пишется как IPv4; у слушающего и UDP — `*:порт`
+: `SOCKET net_handle(NetSocket *s)` | Сокет Windows | Для функций `winsock2.h`; не закрывать отдельно
+: `void net_close(NetSocket *s)` | — | TCP: `shutdown(SD_SEND)`, затем `closesocket`; освобождает `s`; 0 можно
+
+### Правила соединения
+
+:= Что | Как
+: Чтения в одном соединении | Можно мешать `net_recv`, `net_recv_all`, `net_recv_line`: запас строки переходит к следующему чтению
+: Потоки | Один поток читает, другой отправляет — можно; читать из двух потоков сразу — нельзя
+: После `net_socket_timeout` | Чтение, на котором истекло время, возвращает ошибку 10060; соединение после этого лучше закрыть
+: `select` с `net_handle` | Не видит запас `net_recv_line`; после чтения строки проверять `net_ready(s, 0)`
+: Больше 64 сокетов в `fd_set` | `#define FD_SETSIZE N` до `#include <net.h>` или `winsock2.h`
+: Брандмауэр | `net_listen` слушает все сети: при первом запуске Windows спрашивает разрешение, `localhost` работает в любом случае; `net_listen_local` вопроса не вызывает
+
+## UDP
+
+:= Функция | Возвращает | Подробности
+: `NetSocket *net_udp(int port)` | Сокет или 0 | IPv4, все сети компьютера; рассылка (`SO_BROADCAST`) включена; `SIO_UDP_CONNRESET` выключен; порт 0 — любой свободный
+: `int net_udp_send(NetSocket *s, const char *host, int port, const void *data, int size)` | Отправлено байт или -1 | Один пакет; `host` — имя или адрес IPv4; `255.255.255.255` — всем в сети
+: `int net_udp_recv(NetSocket *s, void *buffer, int size, char *from, int from_size)` | Длина пакета или -1 | Ждёт один пакет; `from` получает `адрес:порт` отправителя (можно 0); предел — `net_socket_timeout`
+
+:= Случай | Итог `net_udp_recv`
+: Истёк `net_socket_timeout` | -1, `Ничего не пришло`
+: Пакет больше буфера | -1, ошибка 10040, пакет потерян
+: Прошлый `net_udp_send` ушёл на порт, где никто не слушал | Не мешает: ждёт и принимает следующий пакет, ошибки 10054 нет
+
+Ожидание с пределом без `net_socket_timeout` — `net_ready(s, ms)`. Закрывает сокет UDP `net_close`.
+
+## Имена
+
+:= Функция | Возвращает | Подробности
+: `char *net_resolve(const char *host)` | Первый адрес имени строкой, `free`; 0 — не найдено | IPv4 или IPv6 — какой Windows отдаст первым (`localhost` — обычно `::1`)
+: `char *net_hostname(void)` | Имя компьютера, `free`; 0 — ошибка | UTF-8
+
+## Веб-сервер
+
+:= Функция | Возвращает | Подробности
+: `NetHttpServer *net_http_start(int port, NetHttpHandler handler, void *user)` | Сервер или 0 | Свой поток; порт 0 — любой свободный; обработчик зовётся в потоках соединений, по одному; все сети, IPv6 и IPv4
+: `NetHttpServer *net_http_start_local(int port, NetHttpHandler handler, void *user)` | Сервер или 0 | То же, что `net_http_start`, но слушает только `127.0.0.1`: из сети не прийти, брандмауэр не спрашивает
+: `int net_http_run(int port, NetHttpHandler handler, void *user)` | -1 — порт не открылся; 0 — после остановки | Занимает текущий поток до остановки; соединения читаются каждое в своём потоке; все сети, IPv6 и IPv4
+: `int net_http_port(NetHttpServer *server)` | Порт сервера | Нужен после порта 0
+: `void net_http_stop(NetHttpServer *server)` | — | Сразу обрывает соединения с недочитанным запросом (ответ, который обработчик даёт сейчас, уходит целиком). Снаружи: ждёт конца потока сервера и освобождает его. Из обработчика: сервер кончает после этого ответа; сервер `net_http_run` освобождается сам, а сервер `net_http_start` освобождает позже вызов `net_http_stop` снаружи. После остановки снаружи указатель свободен — второй вызов нельзя. 0 можно
+: `NetHttpServer *net_http_server(NetHttpRequest *r)` | Сервер этого запроса | Чтобы остановить сервер из обработчика
+: `const char *net_http_param(NetHttpRequest *r, const char *name)` | Значение или 0 | Сначала из `query`, затем из тела формы `application/x-www-form-urlencoded`; раскодировано (`%XX`, `+`); без `=` — `""`
+: `const char *net_http_header(NetHttpRequest *r, const char *name)` | Значение или 0 | Имя без учёта регистра
+: `void net_http_reply(NetHttpRequest *r, int status, const char *type, const void *data, size_t size)` | — | Любой ответ; `type` 0 — `application/octet-stream`
+: `void net_http_reply_text(NetHttpRequest *r, int status, const char *text)` | — | `text/plain; charset=utf-8`
+: `void net_http_reply_html(NetHttpRequest *r, int status, const char *html)` | — | `text/html; charset=utf-8`
+: `int net_http_reply_file(NetHttpRequest *r, const char *path)` | 1 — отправлен; 0 — нет | Код 200, тип по расширению; при 0 ничего не отправлено
+: `void net_http_add_header(NetHttpRequest *r, const char *name, const char *value)` | — | Добавляет заголовок к ответу; только до `reply`; можно несколько
+
+### Поведение сервера
+
+:= Что | Как
+: Чтение запросов | Каждое соединение в своём потоке, до 64 сразу; следующие ждут свободного места
+: Порядок | Обработчик — по одному запросу, под замком; следующий ждёт, пока обработчик не вернётся; потокобезопасным обработчик делать не нужно
+: Соединение | Одно на запрос; ответ всегда с `Connection: close`
+: Ответов на запрос | Один; повторный `reply` ничего не отправляет
+: Обработчик не ответил | 404, `text/plain`, «Не найдено»
+: Запрос `HEAD` | Только заголовки, без тела
+: Заголовки ответа | `Content-Type`, `Content-Length`, `Connection`, затем свои из `net_http_add_header`
+: Первая строка запроса не разобрана | 400
+: Заголовки запроса больше 64 КБ (65 536 байт) | 431
+: `Content-Length` больше 64 МБ | 413
+: Тело частями (`Transfer-Encoding: chunked`) | Куски собираются в одно тело, `size` — его длина; больше 64 МБ или неверная запись кусков — 400
+: Тело без `Content-Length` и не частями | `size` 0
+: Чтение запроса | Каждое чтение ждёт до 10 с; молчащий гость занимает только своё соединение, остальных не задерживает, и через 10 с отключается
+: Остановка | Снаружи и из обработчика: недочитанные соединения обрываются сразу, без ожидания 10 с; ответ, который даётся сейчас, уходит целиком
+: Путь со звеном `..` | 400 до обработчика (`..` между `/` или `\`, и записанное через `%2E%2E`)
+: Слушает | `net_http_start`, `net_http_run` — все сети компьютера, IPv6 и IPv4; `net_http_start_local` — только `127.0.0.1`
+: Шифрование | Нет: только HTTP
+
+### Типы net_http_reply_file
+
+:= Расширения | Тип
+: `html`, `htm` | `text/html; charset=utf-8`
+: `css`, `js`, `txt` | `text/css`, `text/javascript`, `text/plain` с `charset=utf-8`
+: `json`, `xml` | `application/json`, `application/xml`
+: `png`, `jpg`, `jpeg`, `gif`, `webp`, `bmp` | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/bmp`
+: `svg`, `ico` | `image/svg+xml`, `image/x-icon`
+: `wav`, `mp3`, `ogg`, `mp4` | `audio/wav`, `audio/mpeg`, `audio/ogg`, `video/mp4`
+: `pdf`, `zip`, `wasm` | `application/pdf`, `application/zip`, `application/wasm`
+: `woff`, `woff2`, `ttf` | `font/woff`, `font/woff2`, `font/ttf`
+: Прочие и без расширения | `application/octet-stream`
+
+Расширение сравнивается без учёта регистра. Файл читается в память целиком; больше 1 ГБ не отдаётся. Путь считается от текущей папки программы.
+
+### Названия кодов в ответе
+
+:= Код | Название
+: 200, 201, 204 | OK, Created, No Content
+: 301, 302, 303, 304, 307 | Moved Permanently, Found, See Other, Not Modified, Temporary Redirect
+: 400, 401, 403, 404, 405 | Bad Request, Unauthorized, Forbidden, Not Found, Method Not Allowed
+: 411, 413, 431 | Length Required, Payload Too Large, Request Header Fields Too Large
+: 500, 501, 503 | Internal Server Error, Not Implemented, Service Unavailable
+: Прочие | OK для кодов меньше 400, Error для остальных
+
+## Потоки
+
+:= Что | Как
+: `net_error` | Своя у каждого потока
+: `net_on_progress` | Своя у каждого потока
+: `net_set_timeout`, `net_set_agent` | Общие для всех потоков
+: Запросы HTTP | Можно из нескольких потоков сразу
+: `NetSocket` | Один читающий поток и один отправляющий
+: Обработчик `net_http_start`, `net_http_start_local` | Потоки соединений, по одному запросу, под замком библиотеки; ввод-вывод библиотеки Си в нём — только если главный поток в это время не печатает
+: Обработчик `net_http_run` | Потоки соединений, по одному запросу, под замком библиотеки; позвавший поток занят приёмом соединений
+
+## Что освобождать
+
+:= Что выдано | Чем освобождать
+: `NetResponse *` от `net_get`, `net_post`, `net_post_text`, `net_request` | `net_free`
+: Строка от `net_header` | Ничем: уходит с `net_free` ответа
+: Строки от `net_url_encode`, `net_url_decode`, `net_recv_line`, `net_resolve`, `net_hostname` | `free`
+: `NetSocket *` от `net_connect`, `net_listen`, `net_listen_local`, `net_accept`, `net_udp` | `net_close`
+: Строка от `net_peer` | Ничем: живёт до `net_close`
+: `SOCKET` от `net_handle` | Ничем: закрывается в `net_close`
+: `NetHttpServer *` от `net_http_start`, `net_http_start_local` | `net_http_stop` снаружи, один раз — и после остановки из обработчика тоже
+: Поля `NetHttpRequest`, строки от `net_http_param`, `net_http_header` | Ничем: живут до конца обработчика

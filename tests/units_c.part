@@ -1,0 +1,10 @@
+// The third source of units.c.
+#include "units_once.h"
+#include "units_guard.h"
+
+static int scale(int x) { return x + 1; }
+
+int c_guard(void) { int first = hdr_bump(); return first + hdr_bump() * 10; }
+int c_scale(void) { return scale(1); }
+int c_once(void) { return once_id(); }
+const char *c_file(void) { return __FILE__; }
