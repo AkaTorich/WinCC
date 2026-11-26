@@ -312,6 +312,7 @@ typedef struct {
     const CcResource *res;      // resources of .rc and .res files (cc_build_win fills them in)
     int nres;
     int manifest;               // WinCC's manifest in an .exe: wcc --manifest or #pragma comment(linker, "/MANIFEST")
+    int tiny;                   // wcc --tiny: sections and the file aligned by 16 bytes (the file maps as one piece)
 } CcWinTarget;
 int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_size);
 

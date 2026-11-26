@@ -13,7 +13,7 @@
 #include "cc.h"
 #include "winlink.h"
 
-#define WCC_VERSION "1.5.0"
+#define WCC_VERSION "1.5.1"
 
 // ---- the compiler's host hooks ----
 
@@ -184,6 +184,7 @@ static void usage(void)
            "  -g            сведения для отладчика WinCC рядом с программой (.wdbg)\n"
            "  -O0           без оптимизации переменных: все в памяти (для отладки)\n"
            "  --manifest    манифест WinCC: A-функции берут UTF-8, кнопки нового вида\n"
+           "  --tiny        разделы и файл с шагом 16 байт, а не 4096 и 512 (файл грузится одним куском)\n"
            "  --stack МБ    размер стека (по умолчанию 8)\n"
            "  --run         собрать и сразу запустить\n", WCC_VERSION);
 }
@@ -373,7 +374,7 @@ int wmain(int argc, wchar_t **wargv)
     static CcSource libsrc[512];       // the files of the .lib files named: library units, after the program's own
     static const char *libfiles[64];
     int nlibsrc = 0, nlibfile = 0, make_lib = 0;
-    int nsrc = 0, dll = 0, subsystem = 0, show_asm = 0, run = 0, manifest = 0;
+    int nsrc = 0, dll = 0, subsystem = 0, show_asm = 0, run = 0, manifest = 0, tiny = 0;
     u64 stack = 0;
     const char *out = 0;
     static const char *libs[128];
@@ -389,6 +390,7 @@ int wmain(int argc, wchar_t **wargv)
         else if (!strcmp(a, "--dll")) dll = 1;
         else if (!strcmp(a, "--lib")) make_lib = 1;
         else if (!strcmp(a, "--manifest")) manifest = 1;
+        else if (!strcmp(a, "--tiny")) tiny = 1;
         else if (!strcmp(a, "-S")) show_asm = 1;
         else if (!strcmp(a, "-g")) cc_debug_info = 1;
         else if (!strcmp(a, "-O0")) cc_no_regalloc = 1;
@@ -483,6 +485,7 @@ int wmain(int argc, wchar_t **wargv)
     t.subsystem = dll ? 3 : subsystem;
     t.stack_reserve = stack;
     t.manifest = manifest;
+    t.tiny = tiny;
     t.dll_of = dll_of;
     {
         const char *base = out;

@@ -3198,8 +3198,13 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     // into .text). The program's writable data, .tls, .bss and base relocations get sections of
     // their own, and only when they have something: an empty program is the headers and one
     // section, 1 KB in the file.
-    const int SA = PE_SECT_ALIGN;
-    int text_rva = SA;
+    // wcc --tiny: sections and the file by 16 bytes, not by 4096 and 512 (link /ALIGN:16 /FILEALIGN:16).
+    // Windows then maps the file as one piece: a section's place in memory is its place in the file.
+    const int SA = t->tiny ? 16 : PE_SECT_ALIGN;
+    const int FA = t->tiny ? 16 : WIN_FILE_ALIGN;
+    // the headers with room for all five sections; tiny: the code right after them
+    int hdr_room = 0x80 + 4 + (int)sizeof(PeFileHeader) + (int)sizeof(PeOpt64) + 5 * (int)sizeof(PeSection);
+    int text_rva = t->tiny ? pe_align(hdr_room, SA) : SA;
     int tab_rva = text_rva + pe_align(text_size, 16);
 
     // the tables, right after the code (offsets from tab_rva)
@@ -3476,17 +3481,30 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
             sec_rva[nsec] = all_rva[i];
             sec_len[nsec] = all_size[i];        // the bytes it has
             sec_vsize[nsec] = all_size[i];
-            sec_bss[nsec] = i == 3;
+            sec_bss[nsec] = i == 3 && !t->tiny;
             bytes[nsec] = all_bytes[i];
+            // tiny: the file is the image, so .bss is zeros in the file (Windows does not take
+            // a section without bytes in such a file, not even the last one)
+            if (i == 3 && t->tiny) {
+                bytes[nsec] = cc_alloc((size_t)bss_size);
+                flags[nsec] = PE_SCN_INIT_DATA | PE_SCN_READ | PE_SCN_WRITE;
+            }
             nsec++;
         }
 
-    // the file: headers, then each section's bytes at 512-byte steps
-    int hdr_size = pe_align(0x80 + 4 + (int)sizeof(PeFileHeader) + (int)sizeof(PeOpt64) + nsec * (int)sizeof(PeSection),
-                            WIN_FILE_ALIGN);
+    // the file: headers, then each section's bytes at 512-byte steps.
+    // tiny: each section lies in the file where it lies in memory, end to end
+    int hdr_size = t->tiny ? text_rva
+                 : pe_align(0x80 + 4 + (int)sizeof(PeFileHeader) + (int)sizeof(PeOpt64) + nsec * (int)sizeof(PeSection), FA);
     int fpos = hdr_size;
     for (int i = 0; i < nsec; i++) {
-        sec_raw[i] = sec_bss[i] ? 0 : pe_align(sec_len[i], WIN_FILE_ALIGN);
+        if (t->tiny) {
+            sec_raw[i] = (i + 1 < nsec ? sec_rva[i + 1] : sec_rva[i] + pe_align(sec_len[i], FA)) - sec_rva[i];
+            sec_ptr[i] = sec_rva[i];
+            fpos = sec_ptr[i] + sec_raw[i];
+            continue;
+        }
+        sec_raw[i] = sec_bss[i] ? 0 : pe_align(sec_len[i], FA);
         sec_ptr[i] = sec_raw[i] ? fpos : 0;
         fpos += sec_raw[i];
     }
@@ -3510,7 +3528,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     op->SizeOfCode = (u32)sec_raw[0];
     for (int i = 1; i < nsec; i++) {
         if (sec_bss[i])
-            op->SizeOfUninitializedData += (u32)pe_align(sec_vsize[i], WIN_FILE_ALIGN);
+            op->SizeOfUninitializedData += (u32)pe_align(sec_vsize[i], FA);
         else
             op->SizeOfInitializedData += (u32)sec_raw[i];
     }
@@ -3518,7 +3536,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     op->BaseOfCode = (u32)text_rva;
     op->ImageBase = as->image_base;
     op->SectionAlignment = SA;
-    op->FileAlignment = WIN_FILE_ALIGN;
+    op->FileAlignment = FA;
     op->MajorOSVersion = 6;
     op->MajorSubsystemVersion = 6;
     op->SizeOfImage = (u32)image_end;

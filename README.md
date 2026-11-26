@@ -34,13 +34,15 @@ wcc main.c mylib.lib -I inc      a program that takes it: only the functions it 
 -g                               debug info for the WinCC debugger next to the program (prog.wdbg)
 -O0                              no register variables: every variable in memory (for debugging)
 --manifest                       WinCC's manifest: A-functions take UTF-8, modern controls (also #pragma comment(linker, "/MANIFEST"))
+--tiny                           sections and the file aligned by 16 bytes, not 4096/512 (the file maps as one piece;
+                                 zero-initialized globals are stored in the file)
 ```
 
 Errors are printed as `file:line: text` (messages are in Russian); warnings (`#warning`, an unknown `\x` escape in a
 string) as `file:line: предупреждение: text` and do not stop the build. An assembler error inside an `asm()` insert names
 the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 1251 — wcc converts it to UTF-8 itself
 (`wcc.c`, `read_text`). `#include <x.h>` searches `-I` and `include` first, the current folder last. Version:
-`wcc --version` (1.5.0; the same for the editor and the installer).
+`wcc --version` (1.5.1; the same for the editor and the installer).
 
 ## What is where
 
