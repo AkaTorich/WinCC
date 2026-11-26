@@ -13,12 +13,12 @@ using WinCC.Documents;
 
 namespace WinCC
 {
-    /// <summary>Сборка через wcc.exe, вывод в нижнюю панель, список ошибок, запуск готовой программы.</summary>
+    /// <summary>Building with wcc.exe, output in the bottom panel, error list, running the result.</summary>
     public partial class MainWindow
     {
         readonly Compiler compiler = new Compiler();
         readonly ObservableCollection<CompilerMessage> messages = new ObservableCollection<CompilerMessage>();
-        /// <summary>Строки вывода не вида «файл:строка: текст» — если сборка не удалась, а ошибок с местом нет, они и есть ошибки.</summary>
+        /// <summary>Output lines not shaped "file:line: text" — when a build fails without located errors, these are the errors.</summary>
         readonly List<string> looseLines = new List<string>();
         bool building;
         string buildFolder;
@@ -30,7 +30,7 @@ namespace WinCC
             else if (Current != null) await BuildCurrent(run);
         }
 
-        /// <summary>Сохранить изменённые файлы перед сборкой: заголовки тоже могли поменяться.</summary>
+        /// <summary>Save modified files before building: headers may have changed too.</summary>
         void SaveModifiedFiles(SourceDocument except)
         {
             foreach (var other in Documents.Where(d => d != except && d.IsModified && !d.IsUntitled).ToList())
@@ -49,11 +49,11 @@ namespace WinCC
             string source = doc.Path;
             string output = Compiler.OutputFor(source, kind);
             await RunBuild(Path.GetDirectoryName(source), Compiler.Arguments(source, output, kind), output, kind, run,
-                "Сборка: " + Path.GetFileName(source) + " → " + Path.GetFileName(output) + " (" + ProgramKinds.Title(kind) + ")",
+                Loc.F("Building", Path.GetFileName(source), Path.GetFileName(output), ProgramKinds.Title(kind)),
                 "wcc " + Compiler.Arguments(Path.GetFileName(source), Path.GetFileName(output), kind));
         }
 
-        /// <summary>Сборка проекта целиком: все его .c и .asm одной программой, параметры — из проекта.</summary>
+        /// <summary>Build the whole project: all its .c and .asm files into one program, options from the project.</summary>
         async Task BuildProject(bool run)
         {
             var p = project;
@@ -61,24 +61,24 @@ namespace WinCC
             if (!p.BuildFiles.Any())
             {
                 BeginOutput();
-                AppendOutput("В проекте «" + p.Name + "» нет файлов .c — собирать нечего.");
+                AppendOutput(Loc.F("NothingToBuild", p.Name));
                 return;
             }
             var missing = p.BuildFiles.Where(f => !File.Exists(p.FullPath(f))).ToList();
             if (missing.Count > 0)
             {
                 BeginOutput();
-                AppendOutput("Файлов проекта нет на диске:");
+                AppendOutput(Loc.T("MissingFiles"));
                 foreach (string f in missing) AppendOutput("    " + p.FullPath(f));
                 return;
             }
             string args = p.Arguments();
             await RunBuild(p.Folder, args, p.OutputPath, p.Kind, run,
-                "Сборка проекта «" + p.Name + "»: файлов " + p.BuildFiles.Count() + " → " + p.OutputName + " (" + ProgramKinds.Title(p.Kind) + ")",
+                Loc.F("BuildingProject", p.Name, p.BuildFiles.Count(), p.OutputName, ProgramKinds.Title(p.Kind)),
                 "wcc " + args);
         }
 
-        /// <summary>Очистить вывод, ошибки и пометки в редакторах.</summary>
+        /// <summary>Clear the output, errors and editor marks.</summary>
         void BeginOutput()
         {
             messages.Clear();
@@ -118,13 +118,13 @@ namespace WinCC
                 return;
             }
 
-            string time = result.Elapsed.TotalSeconds.ToString("0.00") + " с";
+            string time = Loc.F("Seconds", result.Elapsed.TotalSeconds.ToString("0.00"));
             AppendOutput("");
             if (!result.Success)
             {
                 AppendOutput(result.ExitCode != 0
-                    ? "Сборка не удалась (код " + result.ExitCode + ", " + time + ")."
-                    : "Компилятор не сделал файл " + Path.GetFileName(output) + " (" + time + ").");
+                    ? Loc.F("BuildFailed", result.ExitCode, time)
+                    : Loc.F("NoOutputFile", Path.GetFileName(output), time));
                 if (!messages.Any(x => !x.IsWarning))
                 {
                     foreach (string l in looseLines) messages.Add(CompilerMessage.Plain(l));
@@ -142,21 +142,21 @@ namespace WinCC
             }
 
             MarkErrorLines();
-            AppendOutput("Собрано за " + time + ": " + output);
+            AppendOutput(Loc.F("Built", time, output));
             if (!run) return;
             if (kind == ProgramKind.Dll)
             {
-                AppendOutput("DLL сама не запускается — её загружает другая программа.");
+                AppendOutput(Loc.T("DllNoRun"));
                 return;
             }
             try
             {
                 Runner.Start(output, kind);
-                AppendOutput(kind == ProgramKind.Console ? "Запущена в своём окне консоли." : "Запущена.");
+                AppendOutput(kind == ProgramKind.Console ? Loc.T("StartedConsole") : Loc.T("Started"));
             }
             catch (Exception ex)
             {
-                AppendOutput("Не удалось запустить: " + ex.Message);
+                AppendOutput(Loc.F("CannotStart", ex.Message));
             }
         }
 
@@ -166,7 +166,7 @@ namespace WinCC
             var m = CompilerMessage.TryParse(line, buildFolder);
             if (m == null)
             {
-                if (!string.IsNullOrWhiteSpace(line) && !line.StartsWith("Готово:")) looseLines.Add(line);
+                if (!string.IsNullOrWhiteSpace(line) && !line.StartsWith("Готово:") && !line.StartsWith("Done:")) looseLines.Add(line);
                 return;
             }
             messages.Add(m);
@@ -183,9 +183,9 @@ namespace WinCC
         {
             if (ErrorList.ItemsSource == null) ErrorList.ItemsSource = messages;
             int errors = messages.Count(m => !m.IsWarning), warnings = messages.Count - errors;
-            ErrorsHeader.Text = messages.Count == 0 ? "Ошибки"
-                : warnings == 0 ? "Ошибки (" + errors + ")"
-                : "Ошибки (" + errors + ", предупреждений " + warnings + ")";
+            ErrorsHeader.Text = messages.Count == 0 ? Loc.T("Errors")
+                : warnings == 0 ? Loc.F("ErrorsCount", errors)
+                : Loc.F("ErrorsWarnings", errors, warnings);
             NoErrorsText.Visibility = messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -205,10 +205,10 @@ namespace WinCC
                                      own.Where(m => m.IsWarning).Select(m => m.Line).ToList());
         }
 
-        /// <summary>Открыть файл сообщения (если ещё не открыт) и встать на его строку.</summary>
+        /// <summary>Open the message's file (if not open yet) and go to its line.</summary>
         void GoToMessage(CompilerMessage m)
         {
-            if (m == null || m.FullPath == null) return;     // у ошибки нет места в исходнике
+            if (m == null || m.FullPath == null) return;     // the error has no source location
             var doc = Documents.FirstOrDefault(d => d.IsSamePath(m.FullPath));
             if (doc == null)
             {
@@ -218,7 +218,7 @@ namespace WinCC
                 MarkErrorLines(doc, x => doc.IsSamePath(x.FullPath));
             }
             Docs.SelectedItem = doc.Tab;
-            // После смены вкладки редактор ещё не разложен — переход чуть позже
+            // Right after a tab switch the editor is not laid out yet — jump a bit later
             Dispatcher.BeginInvoke(new Action(() => doc.Editor.GoToLine(m.Line, m.Column)), DispatcherPriority.Loaded);
         }
 
@@ -236,7 +236,7 @@ namespace WinCC
             if (m != null) GoToMessage(m);
         }
 
-        /// <summary>Вывод и ошибки для снимка окна: как после неудачной сборки.</summary>
+        /// <summary>Output and errors for a window snapshot: as after a failed build.</summary>
         public void ShowSampleBuild(SourceDocument doc, string[] lines)
         {
             buildFolder = doc.Path != null ? Path.GetDirectoryName(doc.Path) : Environment.CurrentDirectory;

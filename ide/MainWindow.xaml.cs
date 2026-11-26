@@ -12,13 +12,13 @@ using WinCC.Documents;
 namespace WinCC
 {
     /// <summary>
-    /// Главное окно: кнопки, вкладки файлов, нижняя панель с выводом компилятора и ошибками, строка состояния.
-    /// Работа с файлами — MainWindow.Files.cs, сборка и запуск — MainWindow.Build.cs, проект и панель сбоку — MainWindow.Project.cs.
+    /// Main window: toolbar, file tabs, bottom panel with compiler output and errors, status bar.
+    /// Files — MainWindow.Files.cs, build and run — MainWindow.Build.cs, project and side panel — MainWindow.Project.cs.
     /// </summary>
     public partial class MainWindow : ThemedWindow
     {
         readonly Settings settings;
-        /// <summary>Окно для снимка: ничего не запоминает.</summary>
+        /// <summary>Snapshot window: remembers nothing.</summary>
         readonly bool snapshotMode;
 
         public MainWindow() : this(false) { }
@@ -32,6 +32,7 @@ namespace WinCC
             foreach (ProgramKind k in ProgramKinds.All)
                 KindBox.Items.Add(new ComboBoxItem { Content = ProgramKinds.Title(k), Tag = k });
             KindBox.SelectedIndex = Array.IndexOf(ProgramKinds.All, settings.Kind);
+            SettingsButton.Click += (s, e) => EditSettings();
             KindBox.SelectionChanged += (s, e) => OnKindChosen();
             BottomRow.Height = new GridLength(settings.BottomShare, GridUnitType.Star);
 
@@ -83,7 +84,7 @@ namespace WinCC
             get { return Docs.Items.OfType<TabItem>().Select(t => t.Tag as SourceDocument).Where(d => d != null); }
         }
 
-        /// <summary>Открыть проект и файлы прошлого раза; если файлов нет — один новый файл с заготовкой.</summary>
+        /// <summary>Reopen the last project and files; with no files, one new file from the template.</summary>
         public void RestoreSession()
         {
             foreach (string f in settings.Files)
@@ -114,11 +115,11 @@ namespace WinCC
         void UpdateStatus()
         {
             var doc = Current;
-            PathStatus.Text = doc != null ? doc.Path ?? "Новый файл — сохраните его перед сборкой"
+            PathStatus.Text = doc != null ? doc.Path ?? Loc.T("UnsavedPath")
                             : project != null ? project.Path : "";
-            CaretStatus.Text = doc == null ? "" : "Строка " + doc.Editor.CaretRow + ", столбец " + doc.Editor.CaretColumn;
+            CaretStatus.Text = doc == null ? "" : Loc.F("Caret", doc.Editor.CaretRow, doc.Editor.CaretColumn);
             EncodingStatus.Text = doc == null ? "" : doc.EncodingName;
-            KindStatus.Text = (project != null ? "Проект: " + project.Name + " · " : "") + "Вид: " + ProgramKinds.Title(CurrentKind);
+            KindStatus.Text = (project != null ? Loc.F("StatusProject", project.Name) : "") + Loc.F("StatusKind", ProgramKinds.Title(CurrentKind));
             ProjectSide.SetActiveFile(doc != null ? doc.Path : null);
         }
 
@@ -127,9 +128,31 @@ namespace WinCC
             bool found = Compiler.Exists;
             CompilerIcon.Kind = found ? IconKind.Success : IconKind.Warning;
             CompilerIcon.SetResourceReference(ThemeLibrary.Icon.ForegroundProperty, found ? "Theme.Success" : "Theme.Warning");
-            CompilerText.Text = found ? "wcc.exe на месте" : "wcc.exe не найден";
+            CompilerText.Text = found ? Loc.T("WccFound") : Loc.T("WccMissing");
             CompilerText.ToolTip = Compiler.WccPath;
             CompilerIcon.ToolTip = Compiler.WccPath;
+        }
+
+        /// <summary>Settings dialog; a new language applies at once to the whole window.</summary>
+        void EditSettings()
+        {
+            var dlg = new SettingsDialog(this, settings.Language);
+            if (dlg.ShowDialog() != true || dlg.Language == settings.Language) return;
+            settings.Language = dlg.Language;
+            if (!snapshotMode) settings.Save();
+            ApplyLanguage();
+        }
+
+        /// <summary>Re-applies the interface language: XAML texts follow by themselves, code-made texts are refreshed here.</summary>
+        void ApplyLanguage()
+        {
+            Loc.Apply(settings.Language);
+            foreach (ComboBoxItem item in KindBox.Items) item.Content = ProgramKinds.Title((ProgramKind)item.Tag);
+            foreach (var doc in Documents) doc.RefreshTexts();
+            ProjectSide.Refresh();
+            UpdateCompilerState();
+            UpdateErrors();
+            UpdateStatus();
         }
 
         void OnWindowKeyDown(object sender, KeyEventArgs e)

@@ -12,11 +12,11 @@ namespace WinCC.Build
         public int ExitCode;
         public string OutputFile;
         public TimeSpan Elapsed;
-        /// <summary>Почему сборка не началась (нет компилятора, файл занят); null — началась.</summary>
+        /// <summary>Why the build did not start (no compiler, file locked); null — it started.</summary>
         public string NotStarted;
     }
 
-    /// <summary>Запуск wcc.exe, лежащего рядом с WinCC.exe: «wcc файл.c -o файл.exe [--gui | --dll]» или с параметрами проекта.</summary>
+    /// <summary>Runs the wcc.exe next to WinCC.exe: "wcc file.c -o file.exe [--gui | --dll]" or with the project's arguments.</summary>
     public class Compiler
     {
         Process running;
@@ -26,7 +26,7 @@ namespace WinCC.Build
 
         public bool IsBusy { get { return running != null; } }
 
-        /// <summary>Куда ляжет готовый файл: рядом с исходником, с расширением .exe или .dll.</summary>
+        /// <summary>Where the output goes: next to the source, with a .exe or .dll extension.</summary>
         public static string OutputFor(string source, ProgramKind kind)
         {
             return Path.ChangeExtension(source, ProgramKinds.Extension(kind));
@@ -41,20 +41,20 @@ namespace WinCC.Build
             return sb.ToString();
         }
 
-        /// <summary>Сборка: folder — откуда считаются пути, arguments — параметры wcc, output — что должно получиться.
-        /// Каждая строка вывода компилятора уходит в onLine (из чужого потока).</summary>
+        /// <summary>Build: folder — base for relative paths, arguments — wcc arguments, output — the expected result.
+        /// Every compiler output line goes to onLine (from another thread).</summary>
         public async Task<BuildResult> BuildAsync(string folder, string arguments, string output, Action<string> onLine)
         {
             var result = new BuildResult { OutputFile = output };
 
             if (!Exists)
             {
-                result.NotStarted = "Компилятор не найден: " + WccPath + "\nПоложите wcc.exe в папку, где лежит WinCC.exe.";
+                result.NotStarted = Loc.F("WccNotFound", WccPath);
                 return result;
             }
             if (IsLocked(output))
             {
-                result.NotStarted = "Файл " + Path.GetFileName(output) + " занят — видимо, программа ещё запущена. Закройте её и соберите снова.";
+                result.NotStarted = Loc.F("FileLocked", Path.GetFileName(output));
                 return result;
             }
 
@@ -88,7 +88,7 @@ namespace WinCC.Build
             }
             catch (Exception ex)
             {
-                result.NotStarted = "Не удалось запустить компилятор: " + ex.Message;
+                result.NotStarted = Loc.F("WccNoStart", ex.Message);
             }
             finally
             {
@@ -99,7 +99,7 @@ namespace WinCC.Build
             return result;
         }
 
-        /// <summary>Прервать идущую сборку (при закрытии окна).</summary>
+        /// <summary>Abort a running build (when the window closes).</summary>
         public void Cancel()
         {
             var p = running;

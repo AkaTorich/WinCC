@@ -11,9 +11,9 @@ using WinCC.Build;
 namespace WinCC.Projects
 {
     /// <summary>
-    /// Панель проекта сбоку окна: имя проекта, файлы по группам (исходники, заголовки, ресурсы, прочие), что получится при сборке.
-    /// Без проекта — кнопки «Новый проект», «Открыть проект» и недавние проекты.
-    /// Сама ничего не меняет: просьбы уходят окну событиями (MainWindow.Project.cs).
+    /// Project side panel: project name, files by group (sources, headers, resources, other), what the build produces.
+    /// Without a project — New project, Open project and recent projects.
+    /// It changes nothing itself: requests go to the window as events (MainWindow.Project.cs).
     /// </summary>
     public partial class ProjectPanel : UserControl
     {
@@ -28,7 +28,7 @@ namespace WinCC.Projects
         public event Action PropertiesRequested;
         public event Action CloseProjectRequested;
         public event Action NewProjectRequested;
-        /// <summary>Открыть проект: путь из недавних или null — спросить файл.</summary>
+        /// <summary>Open a project: a path from the recent list, or null — ask for a file.</summary>
         public event Action<string> OpenProjectRequested;
 
         public ProjectPanel()
@@ -85,7 +85,7 @@ namespace WinCC.Projects
             set { project = value; Refresh(); }
         }
 
-        /// <summary>Файл активной вкладки — в дереве выделяется жирным.</summary>
+        /// <summary>The active tab's file — shown in bold in the tree.</summary>
         public void SetActiveFile(string path)
         {
             activeFile = path;
@@ -106,7 +106,7 @@ namespace WinCC.Projects
             RecentTitle.Visibility = RecentList.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        /// <summary>Перерисовать дерево по проекту (после правки списка или свойств).</summary>
+        /// <summary>Rebuild the tree from the project (after the file list or properties change).</summary>
         public void Refresh()
         {
             ProjectView.Visibility = project != null ? Visibility.Visible : Visibility.Collapsed;
@@ -123,10 +123,10 @@ namespace WinCC.Projects
             var headers = project.Files.Where(Project.IsHeader).ToList();
             var resources = project.Files.Where(Project.IsResource).ToList();
             var other = project.Files.Where(f => !Project.IsBuildFile(f) && !Project.IsHeader(f)).ToList();
-            AddGroup("Исходники", IconKind.Code, sources);
-            AddGroup("Заголовки", IconKind.FileText, headers);
-            AddGroup("Ресурсы", IconKind.Image, resources);
-            AddGroup("Прочие", IconKind.File, other);
+            AddGroup(Loc.T("GroupSources"), IconKind.Code, sources);
+            AddGroup(Loc.T("GroupHeaders"), IconKind.FileText, headers);
+            AddGroup(Loc.T("GroupResources"), IconKind.Image, resources);
+            AddGroup(Loc.T("GroupOther"), IconKind.File, other);
             NoFilesView.Visibility = project.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             SetActiveFile(activeFile);
         }
@@ -140,7 +140,7 @@ namespace WinCC.Projects
                 string full = project.FullPath(f);
                 bool exists = File.Exists(full);
                 var item = new TreeViewItem { Header = Row(exists ? icon : IconKind.Warning, f, exists), Tag = full };
-                item.ToolTip = exists ? full : "Файла нет на диске: " + full;
+                item.ToolTip = exists ? full : Loc.F("MissingOnDisk", full);
                 item.ContextMenu = FileMenu(full);
                 group.Items.Add(item);
             }
@@ -165,10 +165,10 @@ namespace WinCC.Projects
         ContextMenu FileMenu(string full)
         {
             var menu = new ContextMenu();
-            menu.Items.Add(MakeItem("Открыть", IconKind.FolderOpen, () => OpenFileRequested?.Invoke(full)));
-            menu.Items.Add(MakeItem("Убрать из проекта", IconKind.Minus, () => RemoveFileRequested?.Invoke(full)));
+            menu.Items.Add(MakeItem(Loc.T("Open"), IconKind.FolderOpen, () => OpenFileRequested?.Invoke(full)));
+            menu.Items.Add(MakeItem(Loc.T("RemoveFromProject"), IconKind.Minus, () => RemoveFileRequested?.Invoke(full)));
             menu.Items.Add(new Separator());
-            menu.Items.Add(MakeItem("Показать в папке", IconKind.Folder, () => ShowInFolder(full)));
+            menu.Items.Add(MakeItem(Loc.T("ShowInFolder"), IconKind.Folder, () => ShowInFolder(full)));
             return menu;
         }
 

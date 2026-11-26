@@ -8,8 +8,8 @@ using WinCC.Build;
 
 namespace WinCC.Projects
 {
-    /// <summary>Свойства проекта: вид программы, имя готового файла, макросы, папки #include, DLL, стек, другие параметры wcc.
-    /// Списки пишутся через «;». ОК — значения уходят в проект (сохраняет окно).</summary>
+    /// <summary>Project properties: program kind, output name, macros, #include folders, DLLs, stack, other wcc arguments.
+    /// Lists are separated by ";". OK puts the values into the project (the window saves it).</summary>
     public class ProjectDialog : ThemedDialog
     {
         readonly Project project;
@@ -25,8 +25,8 @@ namespace WinCC.Projects
         {
             this.project = project;
             Owner = owner;
-            Title = "Свойства проекта «" + project.Name + "»";
-            PrimaryText = "Сохранить";
+            Title = Loc.F("PropertiesTitle", project.Name);
+            PrimaryText = Loc.T("Save");
 
             foreach (ProgramKind k in ProgramKinds.All)
                 kindBox.Items.Add(new ComboBoxItem { Content = ProgramKinds.Title(k), Tag = k });
@@ -43,13 +43,13 @@ namespace WinCC.Projects
             var grid = new Grid { Width = 520, Margin = new Thickness(4, 4, 4, 8) };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            AddRow(grid, "Вид программы", kindBox);
-            AddRow(grid, "Готовый файл", outputBox, "Пусто — " + project.Name + ".exe / .dll");
-            AddRow(grid, "Макросы (-D)", definesBox, "DEBUG; VERSION=2");
-            AddRow(grid, "Папки #include (-I)", includesBox);
-            AddRow(grid, "DLL (-l)", libsBox, "dwmapi; mylib");
-            AddRow(grid, "Стек, МБ", stackBox, "0 — 8 МБ");
-            AddRow(grid, "Другие параметры", optionsBox, "-S");
+            AddRow(grid, Loc.T("KindLabel"), kindBox);
+            AddRow(grid, Loc.T("OutputFile"), outputBox, Loc.F("OutputEmpty", project.Name));
+            AddRow(grid, Loc.T("Macros"), definesBox, "DEBUG; VERSION=2");
+            AddRow(grid, Loc.T("IncludeFolders"), includesBox);
+            AddRow(grid, Loc.T("Dlls"), libsBox, "dwmapi; mylib");
+            AddRow(grid, Loc.T("StackMb"), stackBox, Loc.T("StackDefault"));
+            AddRow(grid, Loc.T("OtherArgs"), optionsBox, "-S");
             Content = grid;
 
             Accepting += (s, e) => Apply();

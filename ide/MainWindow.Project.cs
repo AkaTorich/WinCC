@@ -10,17 +10,16 @@ using WinCC.Projects;
 
 namespace WinCC
 {
-    /// <summary>Проект: панель сбоку, новый / открыть / закрыть, файлы проекта, свойства, недавние проекты.
-    /// Пока проект открыт, «Собрать» и «Запустить» собирают его целиком (MainWindow.Build.cs).</summary>
+    /// <summary>Project: side panel, new / open / close, project files, properties, recent projects.
+    /// While a project is open, Build and Run build all of it (MainWindow.Build.cs).</summary>
     public partial class MainWindow
     {
-        const string ProjectFilesFilter = "Файлы Си и ресурсы (*.c; *.h; *.asm; *.rc)|*.c;*.h;*.asm;*.rc|Ресурсы (*.rc; *.res; *.ico; *.bmp; *.cur)|*.rc;*.res;*.ico;*.bmp;*.cur|Все файлы (*.*)|*.*";
-        /// <summary>Заготовка нового .rc: значок программы — первым, Windows берёт его для ярлыков.</summary>
+        /// <summary>Template for a new .rc: the program icon goes first, Windows uses it for shortcuts.</summary>
         const string NewRcText = "#include <windows.h>\r\n\r\n1 ICON \"app.ico\"\r\n";
         const int RecentLimit = 8;
 
         Project project;
-        /// <summary>Выбор вида меняется из кода — не записывать его ни в проект, ни в настройки.</summary>
+        /// <summary>The kind selection is being changed from code — write it neither to the project nor to settings.</summary>
         bool syncingKind;
 
         void InitProjectPanel()
@@ -64,7 +63,7 @@ namespace WinCC
             UpdateStatus();
         }
 
-        /// <summary>Вид программы выбран в окне: у проекта — в проект, без проекта — в настройки.</summary>
+        /// <summary>Program kind chosen in the window: into the project if one is open, otherwise into settings.</summary>
         void OnKindChosen()
         {
             if (syncingKind) return;
@@ -80,13 +79,13 @@ namespace WinCC
 
         void OpenProjectDialog()
         {
-            var dlg = new OpenFileDialog { Filter = Project.FileFilter, Title = "Открыть проект" };
+            var dlg = new OpenFileDialog { Filter = Loc.T("FilterProject"), Title = Loc.T("OpenProjectTitle") };
             string folder = project != null ? project.Folder : DefaultFolder();
             if (folder != null) dlg.InitialDirectory = folder;
             if (dlg.ShowDialog(this) == true) OpenProject(dlg.FileName, true);
         }
 
-        /// <summary>Открыть проект (прежний закрывается). openFirst — открыть первый исходник, если ни один файл проекта не открыт.</summary>
+        /// <summary>Open a project (the previous one closes). openFirst — open the first source if no project file is open.</summary>
         public bool OpenProject(string path, bool openFirst)
         {
             Project loaded;
@@ -95,7 +94,7 @@ namespace WinCC
             {
                 settings.Recent.RemoveAll(r => string.Equals(r, path, StringComparison.OrdinalIgnoreCase));
                 ProjectSide.SetRecent(settings.Recent);
-                ThemedMessageBox.Show(this, "Не удалось открыть проект:\n" + path + "\n\n" + ex.Message, "Проект",
+                ThemedMessageBox.Show(this, Loc.F("CannotOpenProject", path, ex.Message), Loc.T("Project"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
@@ -143,21 +142,21 @@ namespace WinCC
             }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, "Не удалось сохранить проект:\n" + project.Path + "\n\n" + ex.Message, "Проект",
+                ThemedMessageBox.Show(this, Loc.F("CannotSaveProject", project.Path, ex.Message), Loc.T("Project"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
         }
 
-        /// <summary>Новый проект: файл .wccproj в выбранной папке. Файлы Си, что там уже лежат, — по согласию в проект;
-        /// пустая папка — main.c с заготовкой.</summary>
+        /// <summary>New project: a .wccproj file in the chosen folder. C files already there join the project if the user agrees;
+        /// an empty folder gets main.c from the template.</summary>
         void NewProject()
         {
             var dlg = new SaveFileDialog
             {
-                Filter = Project.FileFilter,
-                Title = "Новый проект",
-                FileName = "Программа",
+                Filter = Loc.T("FilterProject"),
+                Title = Loc.T("NewProjectTitle"),
+                FileName = Loc.T("NewProjectName"),
                 DefaultExt = Project.Extension,
                 AddExtension = true
             };
@@ -176,8 +175,8 @@ namespace WinCC
             {
                 if (found.Count > 0)
                 {
-                    var answer = ThemedMessageBox.Show(this, "В папке уже есть файлы Си: " + found.Count + ".\nДобавить их в проект?",
-                        "Новый проект", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    var answer = ThemedMessageBox.Show(this, Loc.F("AddFoundFiles", found.Count),
+                        Loc.T("NewProjectTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (answer == MessageBoxResult.Yes) foreach (string f in found) p.Add(f);
                 }
                 else
@@ -190,14 +189,14 @@ namespace WinCC
             }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, "Не удалось создать проект:\n" + p.Path + "\n\n" + ex.Message, "Новый проект",
+                ThemedMessageBox.Show(this, Loc.F("CannotCreateProject", p.Path, ex.Message), Loc.T("NewProjectTitle"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             OpenProject(p.Path, true);
         }
 
-        /// <summary>Не текст: такой файл проекта открывает программа Windows, а не вкладка редактора.</summary>
+        /// <summary>Not text: such a project file opens in its Windows program, not in an editor tab.</summary>
         static readonly string[] binaryExtensions = { ".res", ".ico", ".cur", ".bmp", ".png", ".jpg", ".gif", ".ani", ".bin" };
 
         void OpenProjectFile(string path)
@@ -207,13 +206,13 @@ namespace WinCC
                 try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }); }
                 catch (Exception ex)
                 {
-                    ThemedMessageBox.Show(this, "Не удалось открыть файл:\n" + path + "\n\n" + ex.Message, "Проект",
+                    ThemedMessageBox.Show(this, Loc.F("CannotOpenFile", path, ex.Message), Loc.T("Project"),
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 return;
             }
             if (File.Exists(path)) { OpenPath(path, true); return; }
-            var answer = ThemedMessageBox.Show(this, "Файла нет на диске:\n" + path + "\n\nУбрать его из проекта?", "Проект",
+            var answer = ThemedMessageBox.Show(this, Loc.F("FileMissingRemove", path), Loc.T("Project"),
                 MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (answer == MessageBoxResult.Yes) RemoveFromProject(path);
         }
@@ -221,7 +220,7 @@ namespace WinCC
         void AddFilesToProject()
         {
             if (project == null) return;
-            var dlg = new OpenFileDialog { Filter = ProjectFilesFilter, Multiselect = true, Title = "Добавить файлы в проект", InitialDirectory = project.Folder };
+            var dlg = new OpenFileDialog { Filter = Loc.T("FilterProjectFiles"), Multiselect = true, Title = Loc.T("AddFilesTitle"), InitialDirectory = project.Folder };
             if (dlg.ShowDialog(this) != true) return;
             AddToProject(dlg.FileNames);
         }
@@ -234,7 +233,7 @@ namespace WinCC
             if (changed && SaveProject()) ProjectSide.Refresh();
         }
 
-        /// <summary>Файлы брошены на панель: проект — открыть, остальное — в проект (без проекта — просто открыть).</summary>
+        /// <summary>Files dropped onto the panel: a project is opened, the rest joins the project (without a project — just opened).</summary>
         void OnProjectDrop(string[] files)
         {
             string proj = files.FirstOrDefault(Project.IsProjectFile);
@@ -252,8 +251,8 @@ namespace WinCC
             if (project == null) return;
             var dlg = new SaveFileDialog
             {
-                Filter = ProjectFilesFilter,
-                Title = "Новый файл в проекте",
+                Filter = Loc.T("FilterProjectFiles"),
+                Title = Loc.T("NewFileInProject"),
                 FileName = project.Files.Count == 0 ? "main.c" : "",
                 DefaultExt = ".c",
                 AddExtension = true,
@@ -273,7 +272,7 @@ namespace WinCC
             }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, "Не удалось создать файл:\n" + path + "\n\n" + ex.Message, "Новый файл",
+                ThemedMessageBox.Show(this, Loc.F("CannotCreateFile", path, ex.Message), Loc.T("NewFile"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }

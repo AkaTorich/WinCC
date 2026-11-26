@@ -7,20 +7,21 @@ using WinCC.Build;
 namespace WinCC
 {
     /// <summary>
-    /// Что окно помнит между запусками: вид программы, открытые файлы, какой из них был впереди, проект, недавние проекты,
-    /// панель проекта (показана ли, ширина), высоту нижней панели
-    /// (долей от высоты редактора — так она уменьшается вместе с окном).
-    /// Файл %APPDATA%\WinCC\settings.txt, строки «ключ=значение». Тема у окна одна — «Киберпанк».
+    /// What the window remembers between runs: interface language, program kind, open files, the front one, project,
+    /// recent projects, project panel (shown, width), bottom panel height
+    /// (as a share of the editor height — so it shrinks with the window).
+    /// File %APPDATA%\WinCC\settings.txt, "key=value" lines. The window has one theme, Cyberpunk.
     /// </summary>
     public class Settings
     {
+        public UiLanguage Language = Loc.SystemDefault;
         public ProgramKind Kind = ProgramKind.Console;
         public readonly List<string> Files = new List<string>();
         public int Active = -1;
         public double BottomShare = 0.36;
-        /// <summary>Открытый проект (.wccproj) или null.</summary>
+        /// <summary>Open project (.wccproj) or null.</summary>
         public string Project;
-        /// <summary>Недавние проекты, свежий первым.</summary>
+        /// <summary>Recent projects, newest first.</summary>
         public readonly List<string> Recent = new List<string>();
         public double PanelWidth = 250;
         public bool PanelShown = true;
@@ -45,6 +46,7 @@ namespace WinCC
                     int n;
                     switch (key)
                     {
+                        case "language": s.Language = Loc.Parse(value); break;
                         case "kind": s.Kind = ProgramKinds.Parse(value); break;
                         case "file": if (value.Length > 0) s.Files.Add(value); break;
                         case "active": if (int.TryParse(value, out n)) s.Active = n; break;
@@ -71,6 +73,7 @@ namespace WinCC
             try
             {
                 var sb = new StringBuilder();
+                sb.AppendLine("language=" + Loc.Code(Language));
                 sb.AppendLine("kind=" + Kind);
                 foreach (string f in Files) sb.AppendLine("file=" + f);
                 sb.AppendLine("active=" + Active);

@@ -8,19 +8,16 @@ using WinCC.Documents;
 
 namespace WinCC
 {
-    /// <summary>Вкладки файлов: новый, открыть, сохранить, закрыть.</summary>
+    /// <summary>File tabs: new, open, save, close.</summary>
     public partial class MainWindow
     {
-        const string FileFilter = "Исходники Си (*.c; *.h)|*.c;*.h|Ресурсы (*.rc)|*.rc|Все файлы (*.*)|*.*";
-        const string OpenFilter = "Исходники Си, ресурсы и проекты (*.c; *.h; *.rc; *.wccproj)|*.c;*.h;*.rc;*.wccproj|Проекты WinCC (*.wccproj)|*.wccproj|Все файлы (*.*)|*.*";
-
-        /// <summary>Заготовка нового файла.</summary>
+        /// <summary>Template for a new file.</summary>
         public const string NewFileText =
             "#include <stdio.h>\r\n" +
             "\r\n" +
             "int main(void)\r\n" +
             "{\r\n" +
-            "    printf(\"Привет, мир!\\n\");\r\n" +
+            "    printf(\"Hello, world!\\n\");\r\n" +
             "    return 0;\r\n" +
             "}\r\n";
 
@@ -35,15 +32,15 @@ namespace WinCC
 
         void OpenFiles()
         {
-            var dlg = new OpenFileDialog { Filter = OpenFilter, Multiselect = true, Title = "Открыть файл" };
+            var dlg = new OpenFileDialog { Filter = Loc.T("FilterOpen"), Multiselect = true, Title = Loc.T("OpenFileTitle") };
             string folder = DefaultFolder();
             if (folder != null) dlg.InitialDirectory = folder;
             if (dlg.ShowDialog(this) != true) return;
             foreach (string f in dlg.FileNames) OpenPath(f, true);
         }
 
-        /// <summary>Открыть файл во вкладке; уже открытый — просто показать. Нетронутый пустой «без имени» заменяется.
-        /// Файл .wccproj открывается как проект (вкладки нет — null).</summary>
+        /// <summary>Open a file in a tab; an already open one is just shown. An untouched empty "untitled" tab is replaced.
+        /// A .wccproj file opens as a project (no tab — null).</summary>
         public SourceDocument OpenPath(string path, bool activate)
         {
             if (Projects.Project.IsProjectFile(path))
@@ -61,7 +58,7 @@ namespace WinCC
             try { doc = SourceDocument.Load(path); }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, "Не удалось открыть файл:\n" + path + "\n\n" + ex.Message, "Открыть",
+                ThemedMessageBox.Show(this, Loc.F("CannotOpenFile", path, ex.Message), Loc.T("Open"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
             }
@@ -93,7 +90,7 @@ namespace WinCC
             if (Current != null) SaveDocument(Current, saveAs);
         }
 
-        /// <summary>Сохранить; у нового файла (или по saveAs) — спросить, куда. false — пользователь отказался или не вышло.</summary>
+        /// <summary>Save; for a new file (or saveAs) ask where. false — the user cancelled or saving failed.</summary>
         bool SaveDocument(SourceDocument doc, bool saveAs)
         {
             string path = doc.Path;
@@ -101,8 +98,8 @@ namespace WinCC
             {
                 var dlg = new SaveFileDialog
                 {
-                    Filter = FileFilter,
-                    Title = "Сохранить файл",
+                    Filter = Loc.T("FilterSave"),
+                    Title = Loc.T("SaveFileTitle"),
                     FileName = doc.Name,
                     DefaultExt = ".c",
                     AddExtension = true
@@ -120,7 +117,7 @@ namespace WinCC
             }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, "Не удалось сохранить файл:\n" + path + "\n\n" + ex.Message, "Сохранить",
+                ThemedMessageBox.Show(this, Loc.F("CannotSaveFile", path, ex.Message), Loc.T("Save"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
@@ -136,10 +133,10 @@ namespace WinCC
             RemoveDocument(doc);
         }
 
-        /// <summary>Файл изменён: сохранить, не сохранять или отменить. true — можно закрывать.</summary>
+        /// <summary>The file is modified: save, don't save or cancel. true — it may be closed.</summary>
         bool ConfirmDiscard(SourceDocument doc)
         {
-            var answer = ThemedMessageBox.Show(this, "Сохранить изменения в файле «" + doc.Name + "»?", "Файл изменён",
+            var answer = ThemedMessageBox.Show(this, Loc.F("SaveChanges", doc.Name), Loc.T("FileModified"),
                 MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.Yes) return SaveDocument(doc, false);
             return answer == MessageBoxResult.No;

@@ -276,7 +276,12 @@ compares every resource.
 An editor for the compiler: projects with a side panel of project files, file tabs, C highlighting, building with
 `wcc.exe`, an error list, running. C# 7.3, WPF, .NET Framework 4.8, no NuGet; ThemeLibrary is compiled in from source —
 the program is a single exe. There is one theme, Cyberpunk (`ide\App.xaml`, `App.xaml.cs`); no theme picker.
-The editor's interface is in Russian.
+
+**Interface language:** English or Russian — the gear button on the right of the toolbar opens Settings
+(`ide\SettingsDialog.cs`); the window switches at once, no restart. The first run follows the Windows language. All
+interface strings of both languages sit side by side in `ide\Loc.cs`: XAML takes them as `{DynamicResource S.key}`,
+code as `Loc.T("key")` / `Loc.F("key", args)`; ThemeLibrary's own texts (message box buttons) follow the same choice.
+Compiler messages come from wcc and stay in Russian.
 
 **Build:** `dotnet build -c Release` in `ide\`; `WinCC.exe` is copied into the `WinCC\` root next to `wcc.exe`.
 The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `ide\icon.ico`.
@@ -330,9 +335,9 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 - Running — `Build\Runner.cs`: a console program runs in its own console window (`cmd /c`), which prints the exit code
   at the end and waits for a key; a GUI program runs as is; a DLL is not run.
 - Program kind (Console / Window / DLL) — `Build\ProgramKind.cs`.
-- Remembered: program kind, open files, front tab, open project, recent projects, project panel (shown, width), bottom
+- Remembered: interface language, program kind, open files, front tab, open project, recent projects, project panel (shown, width), bottom
   panel height — `Settings.cs` (`%APPDATA%\WinCC\settings.txt`).
 
-**Headless check:** `WinCC.exe --window shot.png [WxH] [пусто] [проект:file.wccproj]` — a screenshot of the window with
-sample code, output and errors (`Samples.cs`), nothing is remembered; `пусто` — a window without files; `проект:` — with
-a project open.
+**Headless check:** `WinCC.exe --window shot.png [WxH] [empty] [project:file.wccproj] [lang:en|ru]` — a screenshot of
+the window with sample code, output and errors (`Samples.cs`), nothing is remembered; `empty` — a window without files;
+`project:` — with a project open; `lang:` — interface language.

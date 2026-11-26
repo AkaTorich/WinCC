@@ -6,12 +6,12 @@ using ThemeLibrary;
 
 namespace WinCC
 {
-    /// <summary>Кнопка «Справка» и F1: открывает «Руководство WinCC.pdf» программой, которая в Windows открывает PDF.</summary>
+    /// <summary>Help button and F1: opens the manual PDF with the program Windows uses for PDF files.</summary>
     public partial class MainWindow
     {
         const string ManualName = "Руководство WinCC.pdf";
 
-        /// <summary>Руководство: рядом с WinCC.exe (установленная программа) или в docs\руководство (папка проекта).</summary>
+        /// <summary>The manual: next to WinCC.exe (installed program) or in docs\руководство (source tree).</summary>
         static string ManualPath
         {
             get
@@ -28,14 +28,13 @@ namespace WinCC
             string path = ManualPath;
             if (path == null)
             {
-                ThemedMessageBox.Show(this, "Файл «" + ManualName + "» не найден рядом с WinCC.exe.\nОн ставится вместе с WinCC — переустановите программу.",
-                    "Справка", MessageBoxButton.OK, MessageBoxImage.Information);
+                ThemedMessageBox.Show(this, Loc.F("ManualMissing", ManualName), Loc.T("Help"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, "Не удалось открыть руководство:\n" + path + "\n\n" + ex.Message, "Справка",
+                ThemedMessageBox.Show(this, Loc.F("CannotOpenManual", path, ex.Message), Loc.T("Help"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

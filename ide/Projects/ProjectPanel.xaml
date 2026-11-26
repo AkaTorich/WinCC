@@ -16,10 +16,10 @@
     </UserControl.Resources>
 
     <Grid>
-        <!-- Открытый проект -->
+        <!-- Open project -->
         <DockPanel x:Name="ProjectView" Visibility="Collapsed">
             <DockPanel DockPanel.Dock="Top" Margin="6,2,2,2" LastChildFill="True">
-                <Button x:Name="CloseButton" DockPanel.Dock="Right" Style="{StaticResource PanelButton}" ToolTip="Закрыть проект">
+                <Button x:Name="CloseButton" DockPanel.Dock="Right" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.CloseProject}">
                     <tl:Icon Kind="Close" Style="{StaticResource PanelIcon}"/>
                 </Button>
                 <tl:Icon Kind="Layers" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
@@ -27,13 +27,13 @@
                 <TextBlock x:Name="NameText" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
             <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="2,0,2,6">
-                <Button x:Name="AddButton" Style="{StaticResource PanelButton}" ToolTip="Добавить файлы в проект">
+                <Button x:Name="AddButton" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.AddFilesTitle}">
                     <tl:Icon Kind="Plus" Style="{StaticResource PanelIcon}"/>
                 </Button>
-                <Button x:Name="NewFileButton" Style="{StaticResource PanelButton}" ToolTip="Новый файл в проекте">
+                <Button x:Name="NewFileButton" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.NewFileInProject}">
                     <tl:Icon Kind="File" Style="{StaticResource PanelIcon}"/>
                 </Button>
-                <Button x:Name="PropertiesButton" Style="{StaticResource PanelButton}" ToolTip="Свойства проекта">
+                <Button x:Name="PropertiesButton" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.ProjectProperties}">
                     <tl:Icon Kind="Settings" Style="{StaticResource PanelIcon}"/>
                 </Button>
             </StackPanel>
@@ -42,30 +42,30 @@
             <Grid>
                 <TreeView x:Name="Tree"/>
                 <StackPanel x:Name="NoFilesView" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="10" Visibility="Collapsed">
-                    <TextBlock Text="В проекте нет файлов" Foreground="{DynamicResource Theme.TextDim}" HorizontalAlignment="Center"/>
-                    <Button x:Name="NoFilesAddButton" Content="Добавить файлы…" Style="{DynamicResource Theme.Button}"
+                    <TextBlock Text="{DynamicResource S.ProjectNoFiles}" Foreground="{DynamicResource Theme.TextDim}" HorizontalAlignment="Center"/>
+                    <Button x:Name="NoFilesAddButton" Content="{DynamicResource S.AddFilesEllipsis}" Style="{DynamicResource Theme.Button}"
                             Padding="12,5" Margin="0,10,0,0" HorizontalAlignment="Center"/>
                 </StackPanel>
             </Grid>
         </DockPanel>
 
-        <!-- Проекта нет -->
+        <!-- No project -->
         <DockPanel x:Name="EmptyView" Margin="6,2,6,4">
             <StackPanel DockPanel.Dock="Top">
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                     <tl:Icon Kind="Layers" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
                              Foreground="{DynamicResource Theme.TextDim}"/>
-                    <TextBlock Text="Проект не открыт" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="{DynamicResource S.NoProject}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Button x:Name="NewProjectButton" Style="{DynamicResource Theme.Button}" Padding="10,5" Margin="0,0,0,6"
                         HorizontalContentAlignment="Left">
-                    <StackPanel Orientation="Horizontal"><tl:Icon Kind="Plus" Width="14" Height="14" Margin="0,0,7,0"/><TextBlock Text="Новый проект…"/></StackPanel>
+                    <StackPanel Orientation="Horizontal"><tl:Icon Kind="Plus" Width="14" Height="14" Margin="0,0,7,0"/><TextBlock Text="{DynamicResource S.NewProjectEllipsis}"/></StackPanel>
                 </Button>
                 <Button x:Name="OpenProjectButton" Style="{DynamicResource Theme.Button}" Padding="10,5"
                         HorizontalContentAlignment="Left">
-                    <StackPanel Orientation="Horizontal"><tl:Icon Kind="FolderOpen" Width="14" Height="14" Margin="0,0,7,0"/><TextBlock Text="Открыть проект…"/></StackPanel>
+                    <StackPanel Orientation="Horizontal"><tl:Icon Kind="FolderOpen" Width="14" Height="14" Margin="0,0,7,0"/><TextBlock Text="{DynamicResource S.OpenProjectEllipsis}"/></StackPanel>
                 </Button>
-                <TextBlock x:Name="RecentTitle" Text="Недавние" Foreground="{DynamicResource Theme.TextDim}" Margin="2,16,0,4"/>
+                <TextBlock x:Name="RecentTitle" Text="{DynamicResource S.Recent}" Foreground="{DynamicResource Theme.TextDim}" Margin="2,16,0,4"/>
             </StackPanel>
             <ListBox x:Name="RecentList" BorderThickness="0" Background="Transparent"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>

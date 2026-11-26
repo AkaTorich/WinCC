@@ -5,8 +5,9 @@ using System.Text.RegularExpressions;
 namespace WinCC.Build
 {
     /// <summary>
-    /// Сообщение компилятора вида «файл:строка: текст» (бывает и «файл:строка:столбец: текст»).
-    /// Путь может начинаться с буквы диска — «C:\…», поэтому двоеточие ищется перед числом.
+    /// A compiler message "file:line: text" (also "file:line:column: text").
+    /// A path may start with a drive letter ("C:\…"), so the colon is searched for before a number.
+    /// wcc prints its messages in Russian, so the Russian prefixes are recognised alongside the English ones.
     /// </summary>
     public class CompilerMessage
     {
@@ -23,18 +24,19 @@ namespace WinCC.Build
         public string FileName { get { return string.IsNullOrEmpty(File) ? "" : Path.GetFileName(File); } }
         public string LineText { get { return Line > 0 ? Line.ToString() : ""; } }
 
-        /// <summary>Сообщение без файла и строки («функция объявлена, но не написана», «нет функции main»):
-        /// сборка не удалась, а места у ошибки нет.</summary>
+        /// <summary>A message without file and line ("function declared but not defined", "no main function"):
+        /// the build failed and the error has no location.</summary>
         public static CompilerMessage Plain(string outputLine)
         {
             string text = outputLine.Trim();
-            bool warning = text.StartsWith("предупреждение:", StringComparison.OrdinalIgnoreCase);
-            if (warning) text = text.Substring("предупреждение:".Length).TrimStart();
+            bool warning = false;
+            foreach (string prefix in new[] { "предупреждение:", "warning:" })
+                if (text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) { warning = true; text = text.Substring(prefix.Length).TrimStart(); break; }
             return new CompilerMessage { File = "", FullPath = null, Text = text, IsWarning = warning };
         }
-        public string Kind { get { return IsWarning ? "Предупреждение" : "Ошибка"; } }
+        public string Kind { get { return IsWarning ? Loc.T("Warning") : Loc.T("Error"); } }
 
-        /// <summary>Разбирает строку вывода; null — это не сообщение об ошибке. folder — откуда считать относительные пути.</summary>
+        /// <summary>Parses an output line; null — not an error message. folder — base for relative paths.</summary>
         public static CompilerMessage TryParse(string outputLine, string folder)
         {
             if (string.IsNullOrWhiteSpace(outputLine)) return null;
@@ -46,7 +48,7 @@ namespace WinCC.Build
             if (m.Groups["col"].Success) int.TryParse(m.Groups["col"].Value, out col);
 
             string file = m.Groups["file"].Value.Trim();
-            // «ОШИБКА: …» и подобные строки без пути отсеиваются: у пути есть точка расширения
+            // "ERROR: …" and similar lines without a path are skipped: a path has an extension dot
             if (file.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || Path.GetExtension(file).Length == 0) return null;
 
             string full;

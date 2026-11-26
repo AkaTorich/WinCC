@@ -16,21 +16,23 @@ namespace WinCC
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            ThemeManager.Apply("Cyberpunk");       // у окна одна тема — «Киберпанк»
+            ThemeManager.Apply("Cyberpunk");       // the window has one theme, Cyberpunk
             var args = e.Args;
 
-            // --window <файл.png> [ШxВ] [пусто] [проект:файл.wccproj]: снимок окна без показа —
-            // с образцом кода, выводом и ошибками или с открытым проектом
+            // --window <file.png> [WxH] [empty] [project:file.wccproj] [lang:en|ru]: a window snapshot without showing it —
+            // with sample code, output and errors, or with a project open
             if (args.Length >= 2 && args[0] == "--window")
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 double w = 1280, h = 820;
                 bool empty = false;
                 string projectFile = null;
+                UiLanguage lang = Loc.SystemDefault;
                 foreach (string a in args.Skip(2))
                 {
-                    if (a.StartsWith("проект:")) projectFile = a.Substring(7);
-                    else if (a == "пусто") empty = true;
+                    if (a.StartsWith("project:")) projectFile = a.Substring(8);
+                    else if (a.StartsWith("lang:")) lang = Loc.Parse(a.Substring(5));
+                    else if (a == "empty") empty = true;
                     else if (a.Contains("x"))
                     {
                         var parts = a.Split('x');
@@ -38,12 +40,13 @@ namespace WinCC
                         h = double.Parse(parts[1]);
                     }
                 }
+                Loc.Apply(lang);
                 var win = new MainWindow(true) { Width = w, Height = h };
                 if (projectFile != null) win.OpenProject(projectFile, true);
                 else if (!empty)
                 {
-                    var hello = win.NewFile(Samples.Hello, "привет.c");
-                    win.NewFile(Samples.Window, "окно.c");
+                    var hello = win.NewFile(Samples.Hello, "hello.c");
+                    win.NewFile(Samples.Window, "window.c");
                     win.SelectDocument(hello);
                     win.ShowSampleBuild(hello, Samples.BuildOutput(hello.Name));
                 }
@@ -53,6 +56,7 @@ namespace WinCC
                 return;
             }
 
+            Loc.Apply(Settings.Load().Language);
             var main = new MainWindow();
             main.Show();
             main.RestoreSession();
