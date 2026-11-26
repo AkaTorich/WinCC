@@ -51,5 +51,9 @@ $r = & dotnet build "$setup\WinCC.Setup.csproj" -c Release -nologo -v q 2>&1
 if ($LASTEXITCODE -ne 0) { $r | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }; throw "установщик не собрался" }
 $exe = "$root\WinCCSetup.exe"
 $desk = [Environment]::GetFolderPath("Desktop")
-Copy-Item $exe "$desk\WinCCSetup.exe" -Force
+# копия на рабочий стол: если там старый установщик занят (запущен), копия не ляжет — сказать об этом
+try { Copy-Item $exe "$desk\WinCCSetup.exe" -Force -ErrorAction Stop } catch { }
+if ((Get-FileHash $exe).Hash -ne (Get-FileHash "$desk\WinCCSetup.exe" -ErrorAction SilentlyContinue).Hash) {
+    throw "установщик собран ($exe), но на рабочий стол не лёг: $desk\WinCCSetup.exe занят — закройте его и запустите сборку снова"
+}
 Write-Host ("Готово: {0} ({1:N1} МБ), копия на рабочем столе" -f $exe, ((Get-Item $exe).Length / 1MB))
