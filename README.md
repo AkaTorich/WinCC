@@ -1,306 +1,338 @@
-# WinCC — компилятор Си для Windows
+# WinCC — a C compiler for Windows
 
-Свой компилятор Си: из `.c` делает обычные программы Windows — консольные `.exe`, оконные `.exe` и `.dll`.
-Основа — компилятор из DynastyOS (свой разбор языка, свой ассемблер x86-64, своя запись PE), доученный под Windows.
-Готовая программа не зависит ни от чего, кроме DLL самой Windows: библиотека Си (printf, malloc, файлы, math…)
-вшивается в неё, и в неё попадает только то, что программа на самом деле зовёт (hello.exe — около 70 КБ).
+A self-contained C compiler that turns `.c` files into ordinary Windows programs: console `.exe`, GUI `.exe` and `.dll`.
+It grew out of the DynastyOS compiler (own parser, own x86-64 assembler, own PE writer) and was taught Windows.
+A finished program depends on nothing but Windows' own DLLs: the C library (printf, malloc, files, math…) is linked
+into it, and only what the program actually calls ends up inside (hello.exe is about 35 KB).
 
-- `wcc.exe` — компилятор в командной строке.
-- `WinCC.exe` — окно-редактор: вкладки, подсветка, кнопки «Собрать» и «Запустить», список ошибок.
-- `wui.h` — красивые окна для своих программ: 61 тема ThemeLibrary (стекло, приборы, пергамент, камень, экраны…),
-  своё окно с тенью и скруглёнными углами, кнопки, поля, списки, вкладки, меню сбоку. Раздел «Оформление окон» ниже.
-- `net.h` — сеть: скачать страницу или файл (HTTP и HTTPS), запросы к серверам, TCP, UDP, свой веб-сервер.
-  Под ним — обычные `winsock2.h`, `ws2tcpip.h`, `winhttp.h`, как в Visual Studio. Раздел «Сеть» ниже.
+- `wcc.exe` — the command-line compiler.
+- `WinCC.exe` — the editor: projects, tabs, C syntax highlighting, Build and Run buttons, error list.
+- `wui.h` — good-looking windows for your own programs: 61 ThemeLibrary themes (glass, instruments, parchment, stone,
+  screens…), a custom window with shadow and rounded corners, buttons, fields, lists, tabs, side menu. See "Window styling" below.
+- `net.h` — networking: download a page or a file (HTTP and HTTPS), server requests, TCP, UDP, your own web server.
+  Underneath are the usual `winsock2.h`, `ws2tcpip.h`, `winhttp.h`, as in Visual Studio. See "Networking" below.
 
-## Командная строка
+Download the installer from [Releases](https://github.com/AkaTorich/WinCC/releases): it installs into
+`%LOCALAPPDATA%\Programs\WinCC`, adds `wcc` to `PATH`, creates shortcuts and "Open with" for `.c`/`.h`, and ships
+the manual (in Russian) as a PDF. A Russian version of this file is [README.ru.md](README.ru.md).
+
+## Command line
 
 ```
-wcc hello.c                      → hello.exe (консольная)
-wcc app.c                        → app.exe (оконная, если есть WinMain и нет main)
-wcc a.c b.c util.asm -o prog.exe несколько исходников в одну программу
-wcc app.c app.rc                 с ресурсами: значок, версия, строки, меню, диалоги… (готовый .res от rc.exe — тоже)
-wcc --gui app.c                  оконная, без консоли
-wcc --dll lib.c                  → lib.dll (экспорт — __declspec(dllexport), иначе все функции)
--l user32 / -l mylib             брать функции из этой DLL (своя DLL ищется рядом с исходником)
--I папка  -D ИМЯ=1  -S (ассемблер в .s)  --stack МБ (по умолчанию 8)  --run (собрать и запустить)
+wcc hello.c                      → hello.exe (console)
+wcc app.c                        → app.exe (GUI, if it has WinMain and no main)
+wcc a.c b.c util.asm -o prog.exe several sources into one program
+wcc app.c app.rc                 with resources: icon, version, strings, menus, dialogs… (a ready .res from rc.exe works too)
+wcc --gui app.c                  GUI program, no console
+wcc --dll lib.c                  → lib.dll (exports: __declspec(dllexport), otherwise all functions)
+-l user32 / -l mylib             take functions from this DLL (your own DLL is looked up next to the source)
+-I dir  -D NAME=1  -S (assembly to .s)  --stack MB (default 8)  --run (build and run)
 ```
 
-Ошибки — строками `файл:строка: текст`, по-русски; предупреждения (`#warning`, неизвестная `\п` в строке) —
-`файл:строка: предупреждение: текст`, сборку не останавливают. Ошибка ассемблера во вставке `asm()` называет строку
-исходника на Си. Исходник может быть в UTF-8, UTF-16 (с BOM) или 1251 — wcc переводит его в UTF-8 сам (`wcc.c`,
-`read_text`). `#include <x.h>` ищется сначала в `-I` и `include`, текущая папка — последней. Версия — `wcc --version`
-(1.3.0; та же у окна и установщика).
+Errors are printed as `file:line: text` (messages are in Russian); warnings (`#warning`, an unknown `\x` escape in a
+string) as `file:line: предупреждение: text` and do not stop the build. An assembler error inside an `asm()` insert names
+the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 1251 — wcc converts it to UTF-8 itself
+(`wcc.c`, `read_text`). `#include <x.h>` searches `-I` and `include` first, the current folder last. Version:
+`wcc --version` (1.3.0; the same for the editor and the installer).
 
-## Что где
+## What is where
 
-| Папка / файл | Что там |
+| Folder / file | Contents |
 |---|---|
-| `compiler\` | компилятор (C, собирает MSVC из VS 2026) |
-| `compiler\tokenize.c preprocess.c parse.c type.c codegen.c` | разбор и код из DynastyOS; для Windows: `long` 4 байта, `wchar_t` и `L""` — UTF-16, `#pragma pack`, `#pragma comment(lib)`, `asm("…")` вне функций, слова MSVC (`__stdcall`, `__int64`…); битовые поля разложены как у MSVC (`parse.c`: `struct_decl`, `union_decl`; чтение сдвигами и запись с маской — `codegen.c`); `_Static_assert`, `__func__`, `__DATE__`/`__TIME__`/`__COUNTER__`, `#line`, `#warning`; `_Alignas` и `__declspec(align)` у глобальных, static, локальных (больше 16 — память в стеке с нужным выравниванием) и полей; `__declspec(naked)`, `selectany`. C11: `typeof`, `_Generic`, массивы переменной длины (`parse.c`: `compute_vla_size`, `codegen.c`: `ND_ALLOCA`; в цикле стек не растёт), `_alloca`, `_Atomic` (цикл `lock cmpxchg`), `__builtin_atomic_cas/exchange/fetch_add`, K&R (`knr_params`), назначенный инициализатор в безымянные поля; потоковые переменные — секция `.tls` (`gs:[0x58]`, `__wcc_tls_index`); `__try`/`__except`/`__finally`/`__leave` (`try_stmt`; фильтр и `__finally` — отдельные функции-«funclet», `emit_funclet`); `@имя` в `asm()` — место локальной переменной |
-| `compiler\asm.c` | ассемблер; в конце — запись `.exe`/`.dll` для Windows (`cc_assemble_win`): импорт по DLL, точка входа, манифест в `.rsrc`, ASLR/NX, секции `.bss` (нули без места в файле), `.tls` с каталогом TLS, `.pdata` со сведениями о раскрутке (директивы `.seh_proc`, `.seh_scope`, `.seh_endproc`; обработчик `__try` — `__C_specific_handler` из ntdll); команды: `cmpxchg xadd bsf bsr`, x87, `popcnt lzcnt tzcnt bswap bt* loop jrcxz movabs syscall rdrand crc32 prefetch*`, SSE2–SSE4.2 (`sse_ex`), AVX с `ymm` (`avx`, кодирование VEX — `vex`), `gs:`/`fs:`; числовые метки `1:`/`1b`/`1f`; `.srcfile` — ошибка в `.asm` называет его строку; директивы `.alias`, `.gc` |
-| `compiler\strip.c` | выбрасывает из программы функции и данные библиотеки, до которых она не дотягивается |
-| `compiler\winlink.c` | какая DLL даёт имя: таблицы экспорта читаются прямо из файлов DLL (System32 и папка программы), `.lib` не нужны |
-| `compiler\cc.c` | `cc_build_win`: сборка, поиск main/wmain/WinMain/wWinMain/DllMain и вход в программу |
-| `compiler\wcc.c` | командная строка `wcc.exe` |
-| `compiler\peephole.c` | последний проход по тексту ассемблера: пары `push rax … pop rcx` (и `rdx`) — в `mov rcx, rax`, если между ними нет стека, вызовов, переходов и этого регистра (и неявно: `rep`, `div`…); `jmp` на следующую строку — прочь |
-| `compiler\rc.c` | ресурсы — раздел «Ресурсы» ниже: сценарий `.rc` (как его читает rc.exe) и готовый `.res`; дерево `.rsrc` пишет `asm.c` (`win_resources`) |
-| `compiler\headers.c` | стандартные заголовки (stdio.h …), встроены в компилятор |
-| `compiler\preprocess.c` | `#pragma comment(lib, "имя")`: есть папка `lib\имя` рядом с wcc — её `.c` собираются вместе с программой как библиотека (лишнее выбрасывается), иначе это DLL; `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")` — оконная программа даже с `main`; макросы ищутся по хеш-таблице |
-| `runtime\runtime.c` | библиотека Си (общая с DynastyOS; для Windows — `#ifdef __WINCC__`): FILE кусками через дескриптор (`fh_*`), текстовый режим `\n` ↔ `\r\n`, замок ввода-вывода (`LOCKED`, обёртки в конце), локали по категориям (`rt_setlocale`, точка `g_dp`), `errno` и `strtok` свои у потока, `atexit` без предела, `aligned_alloc` любого выравнивания; функции Microsoft `strcpy_s`, `strcat_s`, `strncpy_s`, `wcscpy_s`, `wcscat_s`, `memcpy_s`…, `_wcsicmp`, `_wcsnicmp` (`rt_ms_*`: не влезло — пустая строка и код ошибки) |
-| `runtime\winhost.c` | библиотека ↔ Windows: консоль (UTF-16, кириллица видна), файлы, время (`clock` по счётчику производительности), память, getenv (свой текст у имени), system (в UTF-8) |
-| `runtime\winfile.c` | файлы кусками для FILE (`cc_fh_*`), дескрипторы `io.h`, `_findfirst`, папки `direct.h`, `stat` |
-| `runtime\winthread.c` | замок stdio, `threads.h` (C11), `process.h` (`_beginthreadex`, `_spawnv`…) |
-| `runtime\winlocale.c` | локали Windows: имена («Russian» → `ru_RU.UTF-8`), месяцы и дни, десятичная точка, `strcoll`, пояс для `%Z` |
-| `runtime\conio.c`, `runtime\cmath.c` | `conio.h` (`_getch`, `_kbhit`…); `complex.h` (стиль Microsoft) и `fenv.h` |
-| `runtime\start.c` | старт программы: командная строка → argc/argv в UTF-8, сбои процессора → сигналы Си (последний обработчик: сначала `__try`), DllMain |
-| `runtime\wingdi.c` | TextOutA, DrawTextA… для UTF-8: GDI получает тот же текст в UTF-16 |
-| `runtime\rtasm.asm` | setjmp/longjmp, помощники процессора; `memcpy`, `memmove`, `memset` (`rep movsb`/`stosb`), `strlen` (SSE2) |
-| `include\windows.h`, `include\win\*.h` | Windows: типы, структуры, константы, функции kernel32, user32, gdi32, comdlg32, shell32, advapi32; `except.h` — исключения (`EXCEPTION_*`, `CONTEXT`, `RaiseException`) |
-| `include\threads.h stdatomic.h complex.h fenv.h tgmath.h` | C11 и математика: потоки, атомарные, комплексные (как у Microsoft), окружение плавающей точки, `_Generic`-обёртки |
-| `include\io.h fcntl.h direct.h process.h conio.h malloc.h intrin.h sal.h sys\stat.h sys\types.h` | заголовки Microsoft C: дескрипторы, папки, потоки и программы, консоль, `_alloca`, интринсики (макросы с `asm`), пометки SAL (пустые) |
-| `include\windowsx.h tchar.h commctrl.h mmsystem.h commdlg.h shellapi.h` | остальное привычное |
-| `include\win\resource.h`, `include\winres.h winresrc.h winver.h` | ресурсы из программы: `FindResource`, `LoadResource`, `LoadString`, `LoadMenu`, `LoadAccelerators`, `CreateDialogParam`, `DialogBoxParam`, `LoadBitmap`, перечисление и замена ресурсов, версия (`GetFileVersionInfo`, `VerQueryValue` — `version.dll`); числа `.rc` (`VS_VERSION_INFO`, `VOS_*`, `VFT_*`, `IDC_STATIC`) |
-| `include\winsock2.h ws2tcpip.h winhttp.h` (+ `winsock.h`, `ws2ipdef.h` — ведут в `winsock2.h`) | сокеты `ws2_32` (TCP, UDP, IPv4 и IPv6, select, WSAPoll, события в окно и в объект, getaddrinfo, inet_pton) и HTTP/HTTPS `winhttp` (запросы, заголовки, прокси, тайм-ауты, WebSocket). 100 функций, все сверены с экспортами DLL; каждое число и размер структуры — с MSVC (`tests\winabi\abi.ps1`) |
-| `include\net.h` | библиотека сети — всё, что зовёт программа (раздел «Сеть») |
-| `lib\net\` | она же исходниками: `core.c` — ошибки словами Windows, UTF-8 ↔ UTF-16, `%XX`, имена; `http.c` — HTTP/HTTPS через WinHTTP; `tcp.c` — соединения; `udp.c` — пакеты; `server.c` — свой веб-сервер (поток на соединение, до 64, обработчик по одному под замком); `net_int.h` — общее внутри |
-| `include\gdiplus.h` | GDI+ для Си — плоские функции `gdiplus.dll` (как `GdiPlusFlat.h` в SDK): сглаженные фигуры, кисти и градиенты, перья, контуры, области, повороты и масштаб, текст ClearType, картинки (загрузка, рисование, пиксели, сохранение — `GdipEncoderPng`, `…Jpeg`, `…Bmp`, `…Gif`, `…Tiff`), значок из картинки. 183 функции, все сверены с экспортами `gdiplus.dll`; тест — `tests\win_gdiplus.c` |
-| `include\wui.h`, `include\wui_icons.h` | библиотека оформления WUI — всё, что зовёт программа; значки ThemeLibrary (`WUI_ICON_HOME`…) |
-| `lib\wui\` | WUI исходниками — раздел «Оформление окон» |
-| `tools\themes-export\` | C#-выгрузка тем и значков из `ThemeLibrary.dll` в `lib\wui\themes.c`, `style.h`, `icons.c` и `include\wui_icons.h` |
-| `examples\wui\` | **Показ WUI** — `wcc main.c pages.c -o "Показ WUI.exe"` (или проект `Показ WUI.wccproj` в окне): все элементы на пяти страницах, боковое меню до самого верха окна, выбор темы в заголовке; `--страница=N` — открыть сразу N-ю (0…4) |
-| `examples\` | `hello.c`, `window.c` (окно, меню, кнопка, рисование, диалог файла), `dll\mathlib.c` + `dll\usemath.c` |
-| `examples\net\` | `get.c` — `get адрес` показывает ответ сервера, `get адрес файл` скачивает с полосой хода; `server.c` — маленький сайт на `http://localhost:8080`: страница с формой, время, `/stop` |
-| `examples\calc\` | **Калькулятор** — `wcc main.c engine.c draw.c -o Калькулятор.exe` (или проект `Калькулятор.wccproj` в окне): всё рисует сам через GDI+ (сглаживание, ClearType, градиенты, тени, плавная подсветка), тёмный заголовок, значок рисуется в программе, чёткий на любом масштабе экрана. Счёт с приоритетом (2 + 3 × 4 = 14), проценты как на телефоне (200 + 10 % = 220), большие числа — `×10¹⁷`, журнал справа в широком окне (щелчок — число обратно на табло, колесо — листать), клавиатура, Esc, Delete, F9 (±), Ctrl+C / Ctrl+V. `--демо=12+3*4=` — сам нажимает кнопки (для снимков). Части: `engine.c` — счёт и вид чисел, `draw.c` — рисование, `main.c` — окно и ввод; GDI+ — из `<gdiplus.h>` WinCC |
-| `tests\` | тесты: `run.ps1` собирает каждый `tests\*.c` в настоящий .exe и запускает; `win_api.c` — Windows API; `win_wui.c` — WUI; `win_net.c` — сеть без интернета (программа сама себе сервер: HTTP, TCP, UDP, медленный клиент); `pp_c11.c` — препроцессор и запись чисел; `c11_lang.c` — язык C11 и Microsoft C (VLA, `_Generic`, `__try`…); `win_lib.c` — новые заголовки библиотеки; `wui\click.ps1` — WUI мышью и клавишами (сообщения окну, снимок после каждого шага); `winabi\abi.ps1` — заголовки против настоящих (MSVC): `sizes.c` — windows.h, `net.c` — структуры сети, `consts.c` делается сам из каждого числа `#define` заголовков сети, `bits.c` — какие байты и биты занимает каждое битовое поле в 27 разных структурах; `snap.ps1` — снимок окна программы |
-| `compiler\host.c`, `build-cctest.cmd` | cctest — проверка того же компилятора в режиме DynastyOS |
-| `ide\` | окно WinCC.exe (раздел ниже) |
-| `docs\руководство\` | **Руководство WinCC** — книга для тех, кто пишет на WinCC (раздел «Руководство» ниже) |
+| `compiler\` | the compiler (C, built with MSVC from VS 2026) |
+| `compiler\tokenize.c preprocess.c parse.c type.c codegen.c` | parser and code generator from DynastyOS; for Windows: `long` is 4 bytes, `wchar_t` and `L""` are UTF-16, `#pragma pack`, `#pragma comment(lib)`, `asm("…")` outside functions, MSVC keywords (`__stdcall`, `__int64`…); bit-fields laid out as by MSVC (`parse.c`: `struct_decl`, `union_decl`; reads by shifts, writes with a mask — `codegen.c`); `_Static_assert`, `__func__`, `__DATE__`/`__TIME__`/`__COUNTER__`, `#line`, `#warning`; `_Alignas` and `__declspec(align)` on globals, statics, locals (over 16 — stack memory with the required alignment) and fields; `__declspec(naked)`, `selectany`. C11: `typeof`, `_Generic`, variable-length arrays (`parse.c`: `compute_vla_size`, `codegen.c`: `ND_ALLOCA`; the stack does not grow inside a loop), `_alloca`, `_Atomic` (a `lock cmpxchg` loop), `__builtin_atomic_cas/exchange/fetch_add`, K&R (`knr_params`), designated initializers into anonymous members; thread-local variables — `.tls` section (`gs:[0x58]`, `__wcc_tls_index`); `__try`/`__except`/`__finally`/`__leave` (`try_stmt`; the filter and `__finally` are separate funclets, `emit_funclet`); `@name` in `asm()` — a local variable's location |
+| `compiler\asm.c` | the assembler; at the end, the Windows `.exe`/`.dll` writer (`cc_assemble_win`): imports per DLL, entry point, manifest in `.rsrc`, ASLR/NX, `.bss` (zeros without file space), `.tls` with a TLS directory, `.pdata` with unwind info (`.seh_proc`, `.seh_scope`, `.seh_endproc` directives; the `__try` handler is `__C_specific_handler` from ntdll); instructions: `cmpxchg xadd bsf bsr`, x87, `popcnt lzcnt tzcnt bswap bt* loop jrcxz movabs syscall rdrand crc32 prefetch*`, SSE2–SSE4.2 (`sse_ex`), AVX with `ymm` (`avx`, VEX encoding — `vex`), `gs:`/`fs:`; numeric labels `1:`/`1b`/`1f`; `.srcfile` — an error in a `.asm` file names its line; `.alias`, `.gc` directives |
+| `compiler\strip.c` | drops library functions and data the program never reaches |
+| `compiler\winlink.c` | which DLL provides a name: export tables are read straight from the DLL files (System32 and the program folder), no `.lib` needed |
+| `compiler\cc.c` | `cc_build_win`: the build, finding main/wmain/WinMain/wWinMain/DllMain and the program entry |
+| `compiler\wcc.c` | the `wcc.exe` command line |
+| `compiler\peephole.c` | final pass over the assembly text: `push rax … pop rcx` (and `rdx`) pairs become `mov rcx, rax` when nothing in between touches the stack, calls, jumps or uses that register (including implicitly: `rep`, `div`…); a `jmp` to the next line is removed |
+| `compiler\rc.c` | resources — see "Resources" below: `.rc` scripts (read the way rc.exe reads them) and ready `.res` files; the `.rsrc` tree is written by `asm.c` (`win_resources`) |
+| `compiler\headers.c` | standard headers (stdio.h …), built into the compiler |
+| `compiler\preprocess.c` | `#pragma comment(lib, "name")`: if there is a `lib\name` folder next to wcc, its `.c` files are built with the program as a library (unused parts dropped), otherwise it is a DLL; `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")` — a GUI program even with `main`; macros are looked up in a hash table |
+| `runtime\runtime.c` | the C library (shared with DynastyOS; Windows parts under `#ifdef __WINCC__`): buffered FILE over a handle (`fh_*`), text mode `\n` ↔ `\r\n`, stdio lock (`LOCKED`, wrappers at the end), per-category locales (`rt_setlocale`, decimal point `g_dp`), per-thread `errno` and `strtok`, unlimited `atexit`, `aligned_alloc` with any alignment; Microsoft functions `strcpy_s`, `strcat_s`, `strncpy_s`, `wcscpy_s`, `wcscat_s`, `memcpy_s`…, `_wcsicmp`, `_wcsnicmp` (`rt_ms_*`: on overflow — empty string and an error code) |
+| `runtime\winhost.c` | library ↔ Windows: console (UTF-16, Cyrillic shows correctly), files, time (`clock` from the performance counter), memory, getenv (its own copy per name), system (in UTF-8) |
+| `runtime\winfile.c` | buffered file I/O for FILE (`cc_fh_*`), `io.h` descriptors, `_findfirst`, `direct.h` folders, `stat` |
+| `runtime\winthread.c` | stdio lock, `threads.h` (C11), `process.h` (`_beginthreadex`, `_spawnv`…) |
+| `runtime\winlocale.c` | Windows locales: names ("Russian" → `ru_RU.UTF-8`), month and day names, decimal point, `strcoll`, time zone for `%Z` |
+| `runtime\conio.c`, `runtime\cmath.c` | `conio.h` (`_getch`, `_kbhit`…); `complex.h` (Microsoft style) and `fenv.h` |
+| `runtime\start.c` | program start: command line → argc/argv in UTF-8, CPU faults → C signals (last-chance handler: `__try` first), DllMain |
+| `runtime\wingdi.c` | TextOutA, DrawTextA… for UTF-8: GDI receives the same text as UTF-16 |
+| `runtime\rtasm.asm` | setjmp/longjmp, CPU helpers; `memcpy`, `memmove`, `memset` (`rep movsb`/`stosb`), `strlen` (SSE2) |
+| `include\windows.h`, `include\win\*.h` | Windows: types, structures, constants, functions of kernel32, user32, gdi32, comdlg32, shell32, advapi32; `except.h` — exceptions (`EXCEPTION_*`, `CONTEXT`, `RaiseException`) |
+| `include\threads.h stdatomic.h complex.h fenv.h tgmath.h` | C11 and math: threads, atomics, complex numbers (Microsoft style), floating-point environment, `_Generic` wrappers |
+| `include\io.h fcntl.h direct.h process.h conio.h malloc.h intrin.h sal.h sys\stat.h sys\types.h` | Microsoft C headers: descriptors, folders, threads and processes, console, `_alloca`, intrinsics (macros with `asm`), SAL annotations (empty) |
+| `include\windowsx.h tchar.h commctrl.h mmsystem.h commdlg.h shellapi.h` | the rest of the familiar set |
+| `include\win\resource.h`, `include\winres.h winresrc.h winver.h` | resources from the program: `FindResource`, `LoadResource`, `LoadString`, `LoadMenu`, `LoadAccelerators`, `CreateDialogParam`, `DialogBoxParam`, `LoadBitmap`, enumerating and updating resources, version info (`GetFileVersionInfo`, `VerQueryValue` — `version.dll`); `.rc` constants (`VS_VERSION_INFO`, `VOS_*`, `VFT_*`, `IDC_STATIC`) |
+| `include\winsock2.h ws2tcpip.h winhttp.h` (+ `winsock.h`, `ws2ipdef.h` — forward to `winsock2.h`) | `ws2_32` sockets (TCP, UDP, IPv4 and IPv6, select, WSAPoll, window and event notifications, getaddrinfo, inet_pton) and `winhttp` HTTP/HTTPS (requests, headers, proxy, timeouts, WebSocket). 100 functions, all checked against the DLL exports; every constant and structure size checked against MSVC (`tests\winabi\abi.ps1`) |
+| `include\net.h` | the networking library — everything a program calls (see "Networking") |
+| `lib\net\` | its sources: `core.c` — errors in Windows' own words, UTF-8 ↔ UTF-16, `%XX`, names; `http.c` — HTTP/HTTPS via WinHTTP; `tcp.c` — connections; `udp.c` — datagrams; `server.c` — the web server (a thread per connection, up to 64, handler serialized under a lock); `net_int.h` — internal shared declarations |
+| `include\gdiplus.h` | GDI+ for C — the flat functions of `gdiplus.dll` (like `GdiPlusFlat.h` in the SDK): antialiased shapes, brushes and gradients, pens, paths, regions, rotation and scaling, ClearType text, images (load, draw, pixels, save — `GdipEncoderPng`, `…Jpeg`, `…Bmp`, `…Gif`, `…Tiff`), icon from an image. 183 functions, all checked against the `gdiplus.dll` exports; test — `tests\win_gdiplus.c` |
+| `include\wui.h`, `include\wui_icons.h` | the WUI styling library — everything a program calls; ThemeLibrary icons (`WUI_ICON_HOME`…) |
+| `lib\wui\` | WUI sources — see "Window styling" |
+| `tools\themes-export\` | C# exporter of themes and icons from `ThemeLibrary.dll` into `lib\wui\themes.c`, `style.h`, `icons.c` and `include\wui_icons.h` |
+| `examples\wui\` | **WUI showcase** — `wcc main.c pages.c -o "Показ WUI.exe"` (or the `Показ WUI.wccproj` project in the editor): every control on five pages, a side menu up to the very top of the window, a theme picker in the title bar; `--страница=N` opens page N (0…4) directly |
+| `examples\` | `hello.c`, `window.c` (window, menu, button, painting, file dialog), `dll\mathlib.c` + `dll\usemath.c` |
+| `examples\net\` | `get.c` — `get url` prints the server response, `get url file` downloads with a progress bar; `server.c` — a small site at `http://localhost:8080`: a page with a form, the time, `/stop` |
+| `examples\calc\` | **Calculator** — `wcc main.c engine.c draw.c -o Калькулятор.exe` (or the `Калькулятор.wccproj` project): draws everything itself with GDI+ (antialiasing, ClearType, gradients, shadows, smooth hover), dark title bar, an icon drawn by the program, sharp at any display scale. Operator precedence (2 + 3 × 4 = 14), percentages as on a phone (200 + 10 % = 220), large numbers as `×10¹⁷`, a history pane in a wide window (click — the number goes back to the display, wheel — scroll), keyboard, Esc, Delete, F9 (±), Ctrl+C / Ctrl+V. `--демо=12+3*4=` presses the buttons itself (for screenshots). Parts: `engine.c` — arithmetic and number formatting, `draw.c` — painting, `main.c` — window and input; GDI+ from WinCC's `<gdiplus.h>` |
+| `tests\` | tests: `run.ps1` builds every `tests\*.c` into a real .exe and runs it; `win_api.c` — Windows API; `win_wui.c` — WUI; `win_net.c` — networking without internet (the program is its own server: HTTP, TCP, UDP, a slow client); `pp_c11.c` — preprocessor and number literals; `c11_lang.c` — C11 and Microsoft C (VLA, `_Generic`, `__try`…); `win_lib.c` — the newer library headers; `win_res.c` — resources; `wui\click.ps1` — WUI driven by mouse and keyboard (window messages, a screenshot after each step); `winabi\abi.ps1` — headers against the real ones (MSVC): `sizes.c` — windows.h, `net.c` — network structures, `consts.c` is generated from every `#define` of the network headers, `bits.c` — which bytes and bits each bit-field occupies in 27 structures; `res\compare.ps1` — resources byte for byte against rc.exe; `snap.ps1` — a screenshot of a program window |
+| `compiler\host.c`, `build-cctest.cmd` | cctest — the same compiler tested in DynastyOS mode |
+| `ide\` | the WinCC.exe editor (section below) |
+| `setup\` | the installer (`make-setup.ps1`, `Installer.cs`, `SetupWindow.xaml`) |
+| `docs\руководство\` | **WinCC Manual** (in Russian) — a book for people writing programs with WinCC: chapters as text, `python сборка.py` builds the PDF, `python "проверка примеров.py"` compiles every example of the book |
 
-**Кириллица.** Исходники — UTF-8. В каждом `.exe` есть манифест: кодовая страница программы — UTF-8, поэтому
-`MessageBoxA`, `CreateWindowExA`, `SetWindowTextA` и другие A-функции берут текст программы как есть. GDI манифест
-не слушает — поэтому `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`, `CreateFontA` идут через
-`runtime\wingdi.c`. С `#define UNICODE` до `windows.h` обычные имена — W-функции (UTF-16, `L"…"`, `TEXT("…")`).
-Манифест же включает современный вид кнопок (Common Controls 6).
+**Unicode.** Sources are UTF-8. Every `.exe` carries a manifest that sets the program's code page to UTF-8, so
+`MessageBoxA`, `CreateWindowExA`, `SetWindowTextA` and the other A-functions take the program's text as is. GDI ignores
+the manifest, so `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`, `CreateFontA` go through
+`runtime\wingdi.c`. With `#define UNICODE` before `windows.h` the plain names are the W-functions (UTF-16, `L"…"`,
+`TEXT("…")`). The same manifest turns on modern control visuals (Common Controls 6).
 
-## Сборка
+## Building
 
-- `build.cmd` — собирает `wcc.exe` в корень (MSVC, Release-ключи `/O2`).
-- `ide\` — `dotnet build -c Release`, `WinCC.exe` копируется в корень.
-- `compiler\build-cctest.cmd` — cctest для режима DynastyOS.
-- **Установщик:** `powershell -ExecutionPolicy Bypass -File setup\make-setup.ps1` — собирает `wcc.exe` и `WinCC.exe`,
-  кладёт поставку в `setup\payload.zip` (обе программы, `runtime\`, `include\`, `lib\`, исходники `examples\`, README,
-  «Руководство WinCC.pdf» — без него установщик не собирается), собирает `WinCCSetup.exe` в корень и копию — на рабочий стол.
+- `build.cmd` — builds `wcc.exe` into the root (MSVC, Release flags `/O2`).
+- `ide\` — `dotnet build -c Release`; `WinCC.exe` is copied into the root.
+- `compiler\build-cctest.cmd` — cctest for DynastyOS mode.
+- **Installer:** `powershell -ExecutionPolicy Bypass -File setup\make-setup.ps1` — builds `wcc.exe` and `WinCC.exe`,
+  packs the payload into `setup\payload.zip` (both programs, `runtime\`, `include\`, `lib\`, `examples\` sources, README,
+  "Руководство WinCC.pdf" — the installer will not build without it), and builds `WinCCSetup.exe` into the root with a
+  copy on the desktop.
 
-## Проверка
+## Testing
 
-- `powershell -File tests\run.ps1` — 47 тестов как настоящие .exe (все проходят; exe, который Windows не запускает, — провал); `x87.c` — команды x87;
-  `bitfields.c` — битовые поля в работе (чтение со знаком, запись, `+=`, `++`, инициализаторы, объединения).
-- `powershell -File tests\wui\click.ps1 показ.exe папка` — показ WUI мышью и клавишами, снимки в папку.
-- `powershell -File tests\winabi\abi.ps1` — 1018 строк (размеры, смещения, числа, байты битовых полей) совпадают с MSVC.
-- `compiler\cctest.exe --tests ..\tests` — те же тесты в режиме DynastyOS (все проходят).
+- `powershell -File tests\run.ps1` — 48 tests as real .exe files (all pass; an exe that Windows refuses to start is a
+  failure); `x87.c` — x87 instructions; `bitfields.c` — bit-fields at work (signed reads, writes, `+=`, `++`,
+  initializers, unions).
+- `powershell -File tests\wui\click.ps1 showcase.exe folder` — the WUI showcase driven by mouse and keyboard, screenshots into the folder.
+- `powershell -File tests\winabi\abi.ps1` — 1018 lines (sizes, offsets, constants, bit-field bytes) match MSVC.
+- `powershell -File tests\res\compare.ps1` — 22 resources identical to rc.exe output.
+- `compiler\cctest.exe --tests ..\tests` — the same tests in DynastyOS mode (all pass).
 
-## Ограничения
+## Limitations
 
-- Атомарные `InterlockedIncrement` и соседи — в `runtime\rtasm.asm` (в 64-битной Windows их нет ни в одной DLL).
-- `long double` — то же, что `double`; языкового `_Complex` нет (`complex.h` — структуры, как у Microsoft).
-- Компилятор не оптимизирует; метки ассемблера (кроме числовых) общие для всей программы; SSE-интринсиков с `__m128` нет.
-- `return` внутри `__finally` и `__try` внутри `__finally` или условия `__except` не поддерживаются.
-- Время библиотеки: `time()` — UTC, `localtime`/`mktime`/`ctime` — часовой пояс и летнее время Windows (`winhost.c`:
-  `cc_utc_seconds`, `cc_utc_offset`).
-- `mbrtowc`/`mbtowc` не дают символ за U+FFFF (он не помещается в один `wchar_t`); строки целиком (`mbstowcs`,
-  `%ls`, `fputws`, `fgetwc`…) пары UTF-16 понимают.
+- The atomic `InterlockedIncrement` family lives in `runtime\rtasm.asm` (64-bit Windows exports none of them from any DLL).
+- `long double` is the same as `double`; there is no language-level `_Complex` (`complex.h` uses structures, as Microsoft does).
+- Optimization is simple: variables in registers, constant folding, one-instruction element addressing; no loop
+  unrolling, no inlining, no auto-vectorization. Assembler labels (except numeric ones) are global to the whole
+  program; no SSE intrinsics with `__m128`.
+- `return` inside `__finally`, and `__try` inside `__finally` or inside an `__except` filter, are not supported.
+- Library time: `time()` is UTC, `localtime`/`mktime`/`ctime` use the Windows time zone and daylight saving
+  (`winhost.c`: `cc_utc_seconds`, `cc_utc_offset`).
+- `mbrtowc`/`mbtowc` cannot return a character above U+FFFF (it does not fit into one `wchar_t`); whole-string
+  functions (`mbstowcs`, `%ls`, `fputws`, `fgetwc`…) handle UTF-16 surrogate pairs.
 
-## Оформление окон: `wui.h`
+## Window styling: `wui.h`
 
-Библиотека WUI — вид тем ThemeLibrary для программ на Си. Подключается одной строкой `#include <wui.h>`:
-wcc сам собирает с программой папку `lib\wui` и выбрасывает то, что программа не зовёт. Окно получается оконной
-программой даже с `main` (без консоли). Готовой программе нужны только DLL Windows (GDI+ в том числе).
+WUI brings the look of ThemeLibrary themes to C programs. One line, `#include <wui.h>`, is enough: wcc builds the
+`lib\wui` folder together with the program and drops whatever the program does not call. The program becomes a GUI
+program even with `main` (no console). The result needs only Windows DLLs (GDI+ included).
 
 ```c
 #include <wui.h>
 int main(void) {
-    WuiControl *win = wui_window("Привет", 800, 520, "Privet");    // ключ — где помнить тему
-    wui_theme_picker(wui_titlebar(win));                         // выбор из всех тем в заголовке
-    WuiControl *card = wui_card(wui_content(win), "Имя");
-    wui_textbox(card, "Как вас зовут?");
-    wui_button(card, "Поздороваться", WUI_BUTTON_ACCENT);
+    WuiControl *win = wui_window("Hello", 800, 520, "Hello");     // key: where the theme choice is remembered
+    wui_theme_picker(wui_titlebar(win));                         // pick any theme from the title bar
+    WuiControl *card = wui_card(wui_content(win), "Name");
+    wui_textbox(card, "What is your name?");
+    wui_button(card, "Say hello", WUI_BUTTON_ACCENT);
     return wui_run();
 }
 ```
 
-- **Темы:** 61 тема ThemeLibrary — все, кроме одиннадцати цветов пергамента (из группы «Пергамент» оставлен один).
-  Смена на лету во всех окнах, выбор помнится как у ThemeLibrary: `%APPDATA%\ThemeLibrary\<ключ>.theme`.
-- **Окно:** своё, прозрачное по точкам — скруглённые углы, тень, кромка, фон темы (градиент или фактура, пятна света,
-  звёзды, узоры, рамка), заголовок с кнопками, перетаскивание, растяжка за края, разворот в рабочую область
-  своего монитора, свой масштаб у каждого монитора. `wui_window_extend` — содержимое до самого верха (как в Нумерографе).
-- **Раскладка:** столбец, строка, перенос, прокрутка, карточка; размер — по содержимому, заданный (`wui_size`)
-  или доля остатка (`wui_stretch`); поля, отступы, выравнивание.
-- **Элементы:** надписи (заголовки, книжный текст, мелкий, крупное число со свечением), кнопки пяти видов и со значком,
-  пункты бокового меню со значками, поле ввода и пароля (выделение, слова, Ctrl+A/C/X/V/Z), флажок, переключатель,
-  кнопки выбора, ползунок, полоса хода (и бегущая), раскрывающийся список, список, вкладки, значки ThemeLibrary (123),
-  холст для своего рисования GDI+, всплывающая строка, сообщение-вопрос. Tab и Shift+Tab ходят по элементам.
+- **Themes:** 61 ThemeLibrary themes — all except eleven parchment colours (one parchment is kept).
+  Switching is live in all windows; the choice is remembered as ThemeLibrary does: `%APPDATA%\ThemeLibrary\<key>.theme`.
+- **Window:** custom, per-pixel transparent — rounded corners, shadow, border, the theme background (gradient or texture,
+  light spots, stars, patterns, frame), a title bar with buttons, dragging, resizing by the edges, maximizing to the
+  work area of its own monitor, per-monitor scaling. `wui_window_extend` — content up to the very top of the window.
+- **Layout:** column, row, wrap, scroll, card; size by content, fixed (`wui_size`) or a share of the remaining space
+  (`wui_stretch`); margins, padding, alignment.
+- **Controls:** labels (headings, book text, small text, a large glowing number), buttons in five styles and with icons,
+  side-menu items with icons, text and password fields (selection, words, Ctrl+A/C/X/V/Z), checkbox, radio button,
+  segmented buttons, slider, progress bar (and indeterminate), combo box, list, tabs, ThemeLibrary icons (123),
+  a canvas for your own GDI+ painting, tooltip, message box. Tab and Shift+Tab move between controls.
 
-| Файл `lib\wui\` | Что там |
+| File in `lib\wui\` | Contents |
 |---|---|
-| `wui_int.h` | общее внутри: тема, кисти, элементы, окно |
-| `themes.c`, `style.h`, `icons.c` | созданы `tools\themes-export` из `ThemeLibrary.dll` — руками не править: палитры, 203 значения оформления каждой темы (кисти, тени, шрифты, отступы), значки |
-| `core.c` | запуск GDI+ и масштаба, текущая тема и её запоминание, строки UTF-8 ↔ UTF-16 |
-| `color.c`, `random.c` | цвета как ColorMath; System.Random из .NET число в число (фактуры и звёзды совпадают с WPF) |
-| `paint.c` | скруглённые фигуры, кисти темы (градиенты WPF в долях рамки), рамки, тени и свечение размытием |
-| `text.c` | шрифты темы, замер, перенос, свечение текста |
-| `texture.c` | 17 фактур (пергамент, лазурит, мрамор, дерево, кожа, латунь…) — точка в точку как в ThemeLibrary, в несколько потоков; sin/cos — как у .NET (x87) |
-| `backdrop.c`, `patterns.c` | слой фона: пятна, звёзды, виньетка, сетки, строки развёртки; узоры (соты, цветок жизни, плата, волны, горизонтали) |
-| `frames.c`, `frames2.c`, `frames.h` | 13 рамок окна (тройная линия, золото, ар-нуво, Египет, гравировка, печать, винты, меандр, ар-деко, стежки, кельтская, арабеска, руны) и разбор путей WPF |
-| `window.c` | окно, заголовок, мышь, клавиши, фокус, отрисовка с кэшем фона |
-| `layout.c` | дерево элементов, раскладка, прокрутка, карточка, обход при рисовании |
-| `controls.c`, `textbox.c`, `combo.c`, `popup.c`, `values.c`, `dialog.c` | элементы; поле ввода; списки и выбор темы; выпадающее окно; вкладки и значения; сообщение |
+| `wui_int.h` | internal shared declarations: theme, brushes, controls, window |
+| `themes.c`, `style.h`, `icons.c` | generated by `tools\themes-export` from `ThemeLibrary.dll` — do not edit by hand: palettes, 203 style values per theme (brushes, shadows, fonts, spacing), icons |
+| `core.c` | GDI+ and DPI startup, current theme and remembering it, UTF-8 ↔ UTF-16 strings |
+| `color.c`, `random.c` | colours as in ColorMath; .NET's System.Random number for number (textures and stars match WPF) |
+| `paint.c` | rounded shapes, theme brushes (WPF gradients in fractions of the bounds), borders, blurred shadows and glow |
+| `text.c` | theme fonts, measuring, wrapping, text glow |
+| `texture.c` | 17 textures (parchment, lapis, marble, wood, leather, brass…) — pixel for pixel as in ThemeLibrary, multithreaded; sin/cos as in .NET (x87) |
+| `backdrop.c`, `patterns.c` | background layer: spots, stars, vignette, grids, scan lines; patterns (honeycomb, flower of life, circuit board, waves, contour lines) |
+| `frames.c`, `frames2.c`, `frames.h` | 13 window frames (triple line, gold, art nouveau, Egyptian, engraving, seal, screws, meander, art deco, stitches, Celtic, arabesque, runes) and a WPF path parser |
+| `window.c` | window, title bar, mouse, keyboard, focus, painting with a cached background |
+| `layout.c` | control tree, layout, scrolling, card, paint traversal |
+| `controls.c`, `textbox.c`, `combo.c`, `popup.c`, `values.c`, `dialog.c` | controls; text field; lists and theme picker; popup window; tabs and values; message box |
 
-**Обновить темы** после правок ThemeLibrary: `dotnet build -c Release` в `tools\themes-export`, затем
-`tools\themes-export\bin\ThemesExport.exe lib\wui include` (список тем — `ThemesExport.exe --list`).
+**Updating themes** after ThemeLibrary changes: `dotnet build -c Release` in `tools\themes-export`, then
+`tools\themes-export\bin\ThemesExport.exe lib\wui include` (theme list — `ThemesExport.exe --list`).
 
-**Проверка без глаз:** `WUI_SNAPSHOT=файл.png` — первое окно сохраняется картинкой, программа закрывается;
-`WUI_THEME=Id` — тема, `WUI_SIZE=ширина,высота`, `WUI_SCALE=2.25` — масштаб экрана; `WUI_SNAPSHOT_WAIT=1` — окно живёт,
-снимок `файл-N.png` по сообщению `WM_APP+3` (так работает `tests\wui\click.ps1`).
+**Headless checks:** `WUI_SNAPSHOT=file.png` — the first window is saved as an image and the program exits;
+`WUI_THEME=Id` — theme, `WUI_SIZE=width,height`, `WUI_SCALE=2.25` — display scale; `WUI_SNAPSHOT_WAIT=1` — the window
+stays alive and saves `file-N.png` on a `WM_APP+3` message (this is how `tests\wui\click.ps1` works).
 
-## Сеть: `net.h`
+## Networking: `net.h`
 
-Подключается одной строкой `#include <net.h>`: wcc сам собирает с программой папку `lib\net` и выбрасывает лишнее.
-Программе нужны только DLL Windows (`ws2_32`, `winhttp`). Тексты и пути — UTF-8.
+One line, `#include <net.h>`: wcc builds the `lib\net` folder together with the program and drops what is unused.
+The program needs only Windows DLLs (`ws2_32`, `winhttp`). Strings and paths are UTF-8.
 
 ```c
 #include <net.h>
 #include <stdio.h>
 int main(void) {
     NetResponse *r = net_get("https://example.com");
-    if (r->error) printf("Не вышло: %s\n", r->error);
-    else printf("%d, %zu байт:\n%s\n", r->status, r->size, r->body);
+    if (r->error) printf("Failed: %s\n", r->error);
+    else printf("%d, %zu bytes:\n%s\n", r->status, r->size, r->body);
     net_free(r);
 }
 ```
 
-- **HTTP и HTTPS** (WinHTTP): `net_get`, `net_post`, `net_post_text`, `net_request` (любой метод и свои заголовки),
-  `net_header`, `net_download` (в файл через «имя.part»: прежний файл цел, пока новый не скачан), `net_on_progress` — ход загрузки. Прокси — как
-  настроен в Windows, сжатые ответы распаковываются, переадресации проходятся, TLS 1.2 и 1.3. `net_set_timeout`,
-  `net_set_agent`, `net_url_encode` / `net_url_decode`.
-- **TCP:** `net_connect` (по имени или адресу, IPv4 и IPv6, с тайм-аутом), `net_listen` + `net_accept`, `net_listen_local` — только свой компьютер (один сокет
-  слышит и IPv4, и IPv6), `net_send`, `net_send_text`, `net_printf`, `net_recv`, `net_recv_all`, `net_recv_line`,
-  `net_ready`, `net_socket_timeout`, `net_peer`, `net_handle` — сам сокет для функций `winsock2.h`.
-- **UDP:** `net_udp`, `net_udp_send` (и на всех: `255.255.255.255`), `net_udp_recv` — с адресом отправителя.
-- **Имена:** `net_resolve`, `net_hostname`.
-- **Свой веб-сервер:** `net_http_start` (в своём потоке), `net_http_start_local` (только для своего компьютера) или
-  `net_http_run` (ждёт на месте); пути с `..` отклоняются (400), тело частями (chunked) собирается, обработчик получает
-  метод, путь (уже без `%XX`), строку после `?`, заголовки, тело; `net_http_param` — значение из адреса или из формы,
-  `net_http_header`, ответы `net_http_reply`, `_text`, `_html`, `_file` (тип по расширению), `net_http_add_header`.
-  Не ответил — уходит 404. Остановить — `net_http_stop` (можно из обработчика: `net_http_server(r)`).
-- **Ошибки:** функции возвращают 0 или -1, `net_error()` говорит почему — словами самой Windows, на языке системы
-  («Не удается разрешить имя или адрес сервера (12007)»). У каждого потока своя ошибка.
+- **HTTP and HTTPS** (WinHTTP): `net_get`, `net_post`, `net_post_text`, `net_request` (any method and custom headers),
+  `net_header`, `net_download` (into a file via "name.part": the old file stays intact until the new one is complete),
+  `net_on_progress` — download progress. Proxy as configured in Windows, compressed responses are decompressed,
+  redirects are followed, TLS 1.2 and 1.3. `net_set_timeout`, `net_set_agent`, `net_url_encode` / `net_url_decode`.
+- **TCP:** `net_connect` (by name or address, IPv4 and IPv6, with a timeout), `net_listen` + `net_accept`,
+  `net_listen_local` — this computer only (one socket hears both IPv4 and IPv6), `net_send`, `net_send_text`,
+  `net_printf`, `net_recv`, `net_recv_all`, `net_recv_line`, `net_ready`, `net_socket_timeout`, `net_peer`,
+  `net_handle` — the raw socket for `winsock2.h` functions.
+- **UDP:** `net_udp`, `net_udp_send` (broadcast too: `255.255.255.255`), `net_udp_recv` — with the sender's address.
+- **Names:** `net_resolve`, `net_hostname`.
+- **Web server:** `net_http_start` (in its own thread), `net_http_start_local` (this computer only) or `net_http_run`
+  (blocks); paths with `..` are rejected (400), chunked bodies are reassembled, the handler gets the method, the path
+  (already `%XX`-decoded), the query string, headers and body; `net_http_param` — a value from the URL or a form,
+  `net_http_header`, replies `net_http_reply`, `_text`, `_html`, `_file` (type by extension), `net_http_add_header`.
+  No reply means 404. Stop with `net_http_stop` (also from a handler: `net_http_server(r)`).
+- **Errors:** functions return 0 or -1, `net_error()` says why — in Windows' own words, in the system language
+  ("The server name or address could not be resolved (12007)"). Each thread has its own error.
 
-## Оптимизация (1.3.0)
+## Optimization (1.3.0)
 
-Код программы и её библиотеки собирается быстрым и коротким; ключей нет, это всегда так. Против 1.2.0 на одном
-и том же замере (рекурсия, сортировка, структуры, строки, память) — в 8,6 раза быстрее (1217 мс → 142 мс),
-программы вдвое меньше: hello.exe 69 → 35 КБ, window.exe 80 → 41 КБ, Калькулятор 190 → 97 КБ, показ WUI 1023 → 748 КБ.
+Program and library code is always compiled to be fast and compact; there are no flags for it. Compared with 1.2.0 on
+the same benchmark (recursion, sorting, structures, strings, memory) it is 8.6 times faster (1217 ms → 142 ms), and
+programs are half the size:
 
-- Переменные в регистрах (`codegen.c`: `alloc_regs`, `ra_walk`): целые и указатели, чей адрес не берётся, — в
-  rbx, rsi, rdi, r12–r15 (сохраняемые при вызове), самые нужные первыми (в цикле — вес ×8). Пролог
-  `push rbp; push регистры; [sub rsp, 8]; mov rbp, rsp` — параметры тогда выше на 8 байт за каждый, их таблица раскрутки
-  (`.seh_proc 0, PAD, R...` → `asm.c`: `write_unwind`, коды PUSH_NONVOL) возвращает регистры при `__except`.
-  Не трогаются функции с `__try`, `asm()` (вставка читает `[rbp+16]` и может занять регистр), `setjmp`, `...`,
-  naked: в них всё как раньше.
-- Места без лишнего кода (`place_of`): локальная — `[rbp-N]` или регистр, глобальная этого файла — `[rip+@имя+N]`;
-  элемент через указатель — одной командой `[base+index*scale+disp]` (`elem_addr`): `a[i]`, `p->x`, `a[i].y`,
-  `a[j+1]` (прибавка — в смещение).
-- Константы считаются при компиляции (`const_int`); правая часть-число или переменная — сразу операндом, без стека
-  (`int_operands`, `leaf_operand`); умножение на степень двойки — сдвиг, на 1 — ничего; беззнаковое деление на
-  степень двойки — сдвиг и маска; пустые приведения (`int` в `int`) убираются до генерации (`drop_casts`).
-- Сравнения в `if`, циклах, `?:`, `&&`, `||` сразу дают условный переход (`gen_branch`); условие цикла `for`/`while`
-  — внизу, один переход на круг.
-- Оператор без значения (`gen_void`): `x = 5`, `i++`, `x += y`, `x = y + 3` — одной командой в регистр или память
-  (`assign_direct`); в разборщике `x op= y` простой переменной — `x = x op y` (`parse.c`: `plain_lvalue`).
-- Вызов: регистры загружаются только под те аргументы, что есть (`xmm` — только для чисел с точкой); параметры в
-  регистрах приходят прямо из `rcx`…`r9`.
-- Библиотека: `memcpy`, `memmove`, `memset` — `rep movsb`/`rep stosb`, `strlen` — SSE2 по 16 байт (`runtime\rtasm.asm`;
-  на С они остались для DynastyOS): `memset` 100 МБ — 4 мс вместо 391.
-- Проверка: все тесты (`tests\run.ps1`, `compiler\cctest.exe --tests ..\tests`, `tests\winabi\abi.ps1`,
-  `tests\res\compare.ps1`) и все примеры руководства (`проверка примеров.py`).
+| Program | 1.2.0 | 1.3.0 |
+|---|---|---|
+| hello.exe | 69 KB | 35 KB |
+| window.exe | 80 KB | 41 KB |
+| `net\get.c` | 92 KB | 48 KB |
+| Calculator | 190 KB | 97 KB |
+| WUI showcase | 1023 KB | 748 KB |
 
-## Ресурсы (`.rc`, `.res`)
+The same LayoutSwitcher program built by MSVC is 113 KB; built by WinCC it is 34 KB and needs no Visual Studio runtime.
 
-`wcc app.c app.rc` — ресурсы идут в `.exe` / `.dll` (секция `.rsrc`). Сценарий `.rc` читается так же, как его читает
-rc.exe Microsoft, и даёт те же байты: `tests\res\compare.ps1` собирает `tests\win_res.rc` обоими и сверяет каждый ресурс.
+- Variables in registers (`codegen.c`: `alloc_regs`, `ra_walk`): integers and pointers whose address is never taken go
+  into rbx, rsi, rdi, r12–r15 (callee-saved), the most used first (inside a loop — weight ×8). The prologue is
+  `push rbp; push regs; [sub rsp, 8]; mov rbp, rsp` — parameters then sit 8 bytes higher per saved register; their
+  unwind info (`.seh_proc 0, PAD, R...` → `asm.c`: `write_unwind`, PUSH_NONVOL codes) restores the registers on `__except`.
+  Functions with `__try`, `asm()` (an insert may read `[rbp+16]` and use any register), `setjmp`, `...` or naked
+  are left as before.
+- Locations without extra code (`place_of`): a local is `[rbp-N]` or a register, a global of this file is
+  `[rip+@name+N]`; an element through a pointer is a single `[base+index*scale+disp]` operand (`elem_addr`): `a[i]`,
+  `p->x`, `a[i].y`, `a[j+1]` (the addend goes into the displacement).
+- Constants are folded at compile time (`const_int`); a constant or variable right-hand side becomes an operand directly,
+  without the stack (`int_operands`, `leaf_operand`); multiplication by a power of two is a shift, by 1 — nothing;
+  unsigned division by a power of two — a shift and a mask; no-op casts (`int` to `int`) are removed before code
+  generation (`drop_casts`).
+- Comparisons in `if`, loops, `?:`, `&&`, `||` produce a conditional jump directly (`gen_branch`); the condition of
+  `for`/`while` is at the bottom, one jump per iteration.
+- Statements without a value (`gen_void`): `x = 5`, `i++`, `x += y`, `x = y + 3` — one instruction into a register or
+  memory (`assign_direct`); in the parser, `x op= y` on a plain variable becomes `x = x op y` (`parse.c`: `plain_lvalue`).
+- Calls: only the registers for the actual arguments are loaded (`xmm` — only for floating-point ones); register
+  parameters come straight from `rcx`…`r9`.
+- Library: `memcpy`, `memmove`, `memset` use `rep movsb`/`rep stosb`, `strlen` uses SSE2 16 bytes at a time
+  (`runtime\rtasm.asm`; the C versions remain for DynastyOS): `memset` of 100 MB takes 4 ms instead of 391.
+- Verified by all tests (`tests\run.ps1`, `compiler\cctest.exe --tests ..\tests`, `tests\winabi\abi.ps1`,
+  `tests\res\compare.ps1`) and all examples of the manual (`проверка примеров.py`).
 
-- Препроцессор Си: `#include`, `#define`, `#if`; определён `RC_INVOKED`; из подключённых `.h` и `.c` берутся только
-  макросы (`#define IDI_APP 101` из `resource.h`). `#pragma code_page` не нужна: файл в UTF-8, UTF-16 или 1251 читается сам.
-- Значки `ICON`, курсоры `CURSOR` (с горячей точкой), картинки `BITMAP`, данные `RCDATA`, `HTML`, `FONT`, `MESSAGETABLE`,
-  `ANICURSOR`, `ANIICON`, манифест (`1 24 "файл"` или `RT_MANIFEST`), свой вид по номеру или имени — из файла или блоком
-  `BEGIN 1, 2L, "строка", L"строка" END`; `STRINGTABLE`, `VERSIONINFO`, `MENU`, `MENUEX`, `ACCELERATORS`, `DIALOG`,
-  `DIALOGEX` (все элементы: `CONTROL`, `LTEXT`/`RTEXT`/`CTEXT`, `PUSHBUTTON`, `DEFPUSHBUTTON`, `EDITTEXT`, флажки, переключатели,
-  `GROUPBOX`, `LISTBOX`, `COMBOBOX`, `SCROLLBAR`, `ICON`; стиль с `NOT`); `LANGUAGE` — для всего ниже или для одного ресурса.
-- Пути файлов — от папки `.rc`, затем в папках `-I`; пишутся и `"res\\app.ico"`, и `"res\app.ico"`.
-- Как у rc.exe: номера картинок значков и курсоров — один общий счёт; имя в кавычках (`"NAME" RCDATA …`) хранится
-  вместе с кавычками; ресурс с тем же видом, именем и языком — последний.
-- Манифест WinCC (UTF-8 — кодовая страница программы, Common Controls 6) кладётся сам; свой манифест `1 24 "x.manifest"`
-  его заменяет.
-- Готовый `.res` (rc.exe, windres) — `wcc app.c app.res`: ресурсы берутся как есть.
-- Проверка: `tests\win_res.c` — Windows сама читает каждый ресурс (значки 16 и 32 — BMP и PNG, курсор, картинка,
-  данные, строки на двух языках, версия, оба меню, клавиши, оба вида диалога); `tests\res\compare.ps1` — то же с `.res`
-  от rc.exe и сверка байт в байт (`tests\res\resdump.c` — список ресурсов exe; файлы проверки делает `tests\res\make.py`).
+## Resources (`.rc`, `.res`)
 
-## Окно WinCC.exe (`ide\`)
+`wcc app.c app.rc` puts resources into the `.exe` / `.dll` (`.rsrc` section). The `.rc` script is read the way
+Microsoft's rc.exe reads it and produces the same bytes: `tests\res\compare.ps1` builds `tests\win_res.rc` with both and
+compares every resource.
 
-Редактор для своего компилятора: проекты и панель файлов проекта сбоку, вкладки файлов, подсветка Си, сборка через `wcc.exe`,
-список ошибок, запуск.
-C# 7.3, WPF, .NET Framework 4.8, без NuGet; библиотека ThemeLibrary вшита исходниками — программа один exe.
-Тема одна — «Киберпанк» (`ide\App.xaml`, `App.xaml.cs`), выбора темы в окне нет.
+- C preprocessor: `#include`, `#define`, `#if`; `RC_INVOKED` is defined; from included `.h` and `.c` files only macros
+  are taken (`#define IDI_APP 101` from `resource.h`). `#pragma code_page` is not needed: UTF-8, UTF-16 or 1251 files
+  are detected automatically.
+- `ICON`, `CURSOR` (with hotspot), `BITMAP`, `RCDATA`, `HTML`, `FONT`, `MESSAGETABLE`, `ANICURSOR`, `ANIICON`, manifest
+  (`1 24 "file"` or `RT_MANIFEST`), custom types by number or name — from a file or a
+  `BEGIN 1, 2L, "string", L"string" END` block; `STRINGTABLE`, `VERSIONINFO`, `MENU`, `MENUEX`, `ACCELERATORS`, `DIALOG`,
+  `DIALOGEX` (all controls: `CONTROL`, `LTEXT`/`RTEXT`/`CTEXT`, `PUSHBUTTON`, `DEFPUSHBUTTON`, `EDITTEXT`, checkboxes,
+  radio buttons, `GROUPBOX`, `LISTBOX`, `COMBOBOX`, `SCROLLBAR`, `ICON`; styles with `NOT`); `LANGUAGE` — for everything
+  below or for a single resource.
+- File paths are relative to the `.rc` folder, then the `-I` folders; both `"res\\app.ico"` and `"res\app.ico"` work.
+- As in rc.exe: icon and cursor images share one counter; a quoted name (`"NAME" RCDATA …`) is stored with its quotes;
+  a resource with the same type, name and language — the last one wins.
+- The WinCC manifest (UTF-8 code page, Common Controls 6) is added automatically; your own `1 24 "x.manifest"` replaces it.
+- A ready `.res` (rc.exe, windres) — `wcc app.c app.res`: resources are taken as they are.
+- Tests: `tests\win_res.c` — Windows itself loads every resource (16 and 32 px icons as BMP and PNG, cursor, bitmap,
+  data, strings in two languages, version, both menu kinds, accelerators, both dialog kinds); `tests\res\compare.ps1` —
+  the same with a `.res` from rc.exe and a byte-for-byte comparison (`tests\res\resdump.c` lists an exe's resources;
+  the test files are generated by `tests\res\make.py`).
 
-**Сборка:** в `ide\` — `dotnet build -c Release`; готовый `WinCC.exe` сам копируется в корень `WinCC\`, рядом с `wcc.exe`.
-Значок — `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) рисует `ide\icon.ico`.
+## The WinCC.exe editor (`ide\`)
 
-**Что умеет и где:**
-- Окно, кнопки, строка состояния, горячие клавиши, перетаскивание файлов в окно — `ide\MainWindow.xaml`, `MainWindow.xaml.cs`.
-  Клавиши: Ctrl+N новый, Ctrl+O открыть, Ctrl+S сохранить, Ctrl+Shift+S сохранить как, Ctrl+W закрыть вкладку,
-  F7 или Ctrl+B собрать, F5 собрать и запустить, F1 — руководство (кнопка с книгой справа на панели),
-  Ctrl+Shift+E — показать / спрятать панель проекта (кнопка «Проект» слева на панели кнопок).
-- Проект — файл `имя.wccproj` (`ide\Projects\Project.cs`): текст UTF-8, строки `ключ=значение`, пути от папки проекта:
-  `kind=` Console / Window / Dll, `output=` имя готового файла (нет — имя проекта), `file=` файл проекта (по строке на файл,
-  в порядке сборки), `define=` макрос (`-D`), `include=` папка `#include` (`-I`), `lib=` DLL (`-l`), `stack=` стек в МБ,
-  `options=` остальные параметры wcc как есть; строки с `#` — пояснения. В программу идут `.c`, `.asm` и ресурсы
-  `.rc`, `.res`; заголовки и прочие файлы (значки, картинки) — только в списке. Готовые проекты — `examples\calc\Калькулятор.wccproj`, `examples\wui\Показ WUI.wccproj`.
-- Панель проекта сбоку — `ide\Projects\ProjectPanel.xaml(.cs)`: имя проекта, файлы по группам «Исходники» / «Заголовки» /
-  «Ресурсы» / «Прочие» (значки, картинки, `.res` открывает программа Windows, не редактор), файл передней вкладки — жирным, файла нет на диске — значок предупреждения; внизу — вид и имя готового файла.
-  Двойной щелчок или Enter — открыть, Delete — убрать из проекта (файл остаётся на диске), правая кнопка — открыть,
-  убрать, показать в папке; файлы, брошенные на панель, входят в проект, брошенный `.wccproj` — открывается.
-  Кнопки наверху: добавить файлы, новый файл в проекте, свойства, закрыть проект. Без проекта — «Новый проект…»,
-  «Открыть проект…» и недавние проекты (до 8).
-- Свойства проекта — `ide\Projects\ProjectDialog.cs`: вид, готовый файл, макросы, папки `#include`, DLL (списки через `;`),
-  стек, другие параметры.
-- Проект — новый, открыть, закрыть, добавить и убрать файлы, недавние — `MainWindow.Project.cs`. Новый проект в папке,
-  где уже есть файлы Си, предлагает взять их в проект; в пустой папке кладёт `main.c` с заготовкой. `.wccproj`
-  открывается и через «Открыть» (Ctrl+O), перетаскиванием в окно и из командной строки. Пока проект открыт,
-  выбор «Вид программы» пишется в проект.
-- Вкладки файлов (новый, открыть, сохранить, закрыть с вопросом о несохранённом) — `MainWindow.Files.cs`;
-  один открытый файл — `Documents\SourceDocument.cs`: читает UTF-8 (с BOM и без), UTF-16 и 1251, сохраняет в той же кодировке, строки CRLF.
-- Редактор — `Editor\CodeEditor.xaml(.cs)`: обычное поле ввода с прозрачными буквами (правка, выделение, отмена — его),
-  Tab/Shift+Tab — отступ строк, Enter повторяет отступ (после `{` — глубже), `}` сдвигает строку назад, Ctrl+колесо — размер букв.
-  - подсветка: разбор Си по строкам — `Editor\CLexer.cs` (ключевые слова, типы, константы, строки и символы, комментарии
-    вместе с многострочными, числа, препроцессор и продолжение директивы через `\`); рисует видимые строки поверх поля — `Editor\HighlightLayer.cs`;
-  - цвета берутся из темы (акцент, второй акцент, «предупреждение», «опасность», приглушённый текст) и меняются вместе с ней; вызовы функций — ярко-зелёные (`#00E640`), объявления и определения функций и макросы с параметрами — фиолетовые (`#B06CFF`): имя перед `(`, а перед ним тип, `static`/`extern`…, `*` после типа, начало строки без отступа или `#define` — `Editor\SyntaxColors.cs`, `Editor\CLexer.cs`;
-  - номера строк, текущая строка, строки с ошибками (красные) и предупреждениями (жёлтые) — `Editor\LineNumbers.cs`.
-- Сборка — `MainWindow.Build.cs` + `Build\Compiler.cs`: перед сборкой сохраняются изменённые файлы, затем
-  `wcc файл.c -o файл.exe` (вид «Окно» — `--gui`, вид «DLL» — `--dll` и `-o файл.dll`), рабочая папка — папка исходника.
-  Пока открыт проект, «Собрать» и «Запустить» собирают его целиком, какая бы вкладка ни была впереди:
-  `wcc a.c b.c … -o имя.exe [вид] [-D… -I… -l… --stack …]`, рабочая папка — папка проекта; файлов нет на диске — так и сказано.
-  Вывод компилятора (UTF-8) — во вкладку «Вывод». Если `wcc.exe` рядом с `WinCC.exe` нет, в панели пишется, что
-  компилятор не найден, и справа на панели кнопок горит «wcc.exe не найден». Если готовый файл занят запущенной программой — так и сказано.
-- Ошибки: строки вида `файл:строка: текст` (и `файл:строка:столбец: текст`; «предупреждение: …» — как предупреждение) —
-  `Build\CompilerMessage.cs`; список во вкладке «Ошибки», щелчок открывает файл и встаёт на строку; двойной щелчок
-  по такой строке во «Выводе» — то же.
-- Запуск — `Build\Runner.cs`: консольная программа — в своём окне консоли (`cmd /c`), которое после конца пишет код выхода
-  и ждёт клавишу; оконная — как есть; DLL не запускается.
-- Вид программы (Консоль / Окно / DLL) — `Build\ProgramKind.cs`.
-- Запоминается: вид программы, открытые файлы, передняя вкладка, открытый проект, недавние проекты, панель проекта
-  (показана ли, ширина), высота нижней панели — `Settings.cs`
-  (`%APPDATA%\WinCC\settings.txt`).
+An editor for the compiler: projects with a side panel of project files, file tabs, C highlighting, building with
+`wcc.exe`, an error list, running. C# 7.3, WPF, .NET Framework 4.8, no NuGet; ThemeLibrary is compiled in from source —
+the program is a single exe. There is one theme, Cyberpunk (`ide\App.xaml`, `App.xaml.cs`); no theme picker.
+The editor's interface is in Russian.
 
-**Проверка без окна:** `WinCC.exe --window снимок.png [ШxВ] [пусто] [проект:файл.wccproj]` — снимок окна
-с образцом кода, выводом и ошибками (`Samples.cs`), ничего не запоминает; `пусто` — окно без файлов; `проект:` — с открытым проектом.
+**Build:** `dotnet build -c Release` in `ide\`; `WinCC.exe` is copied into the `WinCC\` root next to `wcc.exe`.
+The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `ide\icon.ico`.
+
+**Features and where they live:**
+- Window, buttons, status bar, shortcuts, dropping files onto the window — `ide\MainWindow.xaml`, `MainWindow.xaml.cs`.
+  Keys: Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close tab, F7 or Ctrl+B build,
+  F5 build and run, F1 — the manual (book button on the right of the toolbar), Ctrl+Shift+E — show / hide the project
+  panel (the project button on the left of the toolbar).
+- A project is a `name.wccproj` file (`ide\Projects\Project.cs`): UTF-8 text, `key=value` lines, paths relative to the
+  project folder: `kind=` Console / Window / Dll, `output=` output file name (default — the project name), `file=` a project
+  file (one per line, in build order), `define=` a macro (`-D`), `include=` an `#include` folder (`-I`), `lib=` a DLL
+  (`-l`), `stack=` stack in MB, `options=` any other wcc arguments as is; lines starting with `#` are comments.
+  `.c`, `.asm` and `.rc`/`.res` resources go into the program; headers and other files (icons, images) are only listed.
+  Sample projects: `examples\calc\Калькулятор.wccproj`, `examples\wui\Показ WUI.wccproj`.
+- The project side panel — `ide\Projects\ProjectPanel.xaml(.cs)`: project name, files grouped as Sources / Headers /
+  Resources / Other (icons, images and `.res` open in their Windows program, not in the editor), the front tab's file in
+  bold, a missing file gets a warning icon; at the bottom — the program kind and output name. Double-click or Enter —
+  open, Delete — remove from the project (the file stays on disk), right click — open, remove, show in folder; files
+  dropped onto the panel join the project, a dropped `.wccproj` is opened. Buttons on top: add files, new file in the
+  project, properties, close project. Without a project: "New project…", "Open project…" and recent projects (up to 8).
+- Project properties — `ide\Projects\ProjectDialog.cs`: kind, output file, macros, `#include` folders, DLLs (lists
+  separated by `;`), stack, other arguments.
+- New, open, close project, add and remove files, recent projects — `MainWindow.Project.cs`. A new project in a folder
+  that already has C files offers to include them; in an empty folder it creates `main.c` from a template. A `.wccproj`
+  also opens via Open (Ctrl+O), by dropping it onto the window and from the command line. While a project is open,
+  the "program kind" selector writes into the project.
+- File tabs (new, open, save, close with an unsaved-changes prompt) — `MainWindow.Files.cs`; one open file —
+  `Documents\SourceDocument.cs`: reads UTF-8 (with and without BOM), UTF-16 and 1251, saves in the same encoding, CRLF lines.
+- The editor — `Editor\CodeEditor.xaml(.cs)`: a standard text box with transparent glyphs (editing, selection, undo are
+  its own), Tab/Shift+Tab indent lines, Enter keeps the indent (deeper after `{`), `}` outdents the line,
+  Ctrl+wheel — font size.
+  - highlighting: a line-by-line C lexer — `Editor\CLexer.cs` (keywords, types, constants, strings and characters,
+    comments including multi-line ones, numbers, preprocessor with `\` line continuation); visible lines are painted over
+    the text box — `Editor\HighlightLayer.cs`;
+  - colours come from the theme (accent, second accent, warning, danger, muted text); function calls are bright green
+    (`#00E640`), function declarations and definitions and function-like macros are purple (`#B06CFF`): a name before
+    `(` preceded by a type, `static`/`extern`…, a `*` after a type, the start of an unindented line or `#define` —
+    `Editor\SyntaxColors.cs`, `Editor\CLexer.cs`;
+  - line numbers, current line, lines with errors (red) and warnings (yellow) — `Editor\LineNumbers.cs`.
+- Building — `MainWindow.Build.cs` + `Build\Compiler.cs`: modified files are saved first, then
+  `wcc file.c -o file.exe` (kind Window — `--gui`, kind DLL — `--dll` and `-o file.dll`), working folder — the source
+  folder. While a project is open, Build and Run build the whole project regardless of the front tab:
+  `wcc a.c b.c … -o name.exe [kind] [-D… -I… -l… --stack …]`, working folder — the project folder; missing files are
+  reported. Compiler output (UTF-8) goes to the Output tab. If there is no `wcc.exe` next to `WinCC.exe`, the panel says
+  the compiler was not found and a warning lights up on the right of the toolbar. If the output file is locked by a
+  running program, that is reported too.
+- Errors: lines like `file:line: text` (and `file:line:column: text`; "предупреждение: …" is a warning) —
+  `Build\CompilerMessage.cs`; listed in the Errors tab, a click opens the file at that line; double-clicking such a line
+  in Output does the same.
+- Running — `Build\Runner.cs`: a console program runs in its own console window (`cmd /c`), which prints the exit code
+  at the end and waits for a key; a GUI program runs as is; a DLL is not run.
+- Program kind (Console / Window / DLL) — `Build\ProgramKind.cs`.
+- Remembered: program kind, open files, front tab, open project, recent projects, project panel (shown, width), bottom
+  panel height — `Settings.cs` (`%APPDATA%\WinCC\settings.txt`).
+
+**Headless check:** `WinCC.exe --window shot.png [WxH] [пусто] [проект:file.wccproj]` — a screenshot of the window with
+sample code, output and errors (`Samples.cs`), nothing is remembered; `пусто` — a window without files; `проект:` — with
+a project open.
