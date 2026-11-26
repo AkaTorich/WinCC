@@ -28,6 +28,9 @@ namespace WinCC
             return doc;
         }
 
+        /// <summary>Новый файл по выбранному виду: main, WinMain или функции DLL / библиотеки (Projects\Templates.cs).</summary>
+        SourceDocument NewFileByKind() { return NewFile(Projects.Templates.NewFile(CurrentKind, NewFileText)); }
+
         public void SelectDocument(SourceDocument doc) { Docs.SelectedItem = doc.Tab; }
 
         void OpenFiles()
@@ -73,6 +76,7 @@ namespace WinCC
             doc.CloseRequested += (s, e) => CloseDocument(doc);
             doc.StateChanged += (s, e) => { if (doc == Current) UpdateStatus(); };
             doc.Editor.CaretMoved += (s, e) => { if (doc == Current) UpdateStatus(); };
+            HookDebug(doc);
             Docs.Items.Add(doc.Tab);
             if (activate || Docs.Items.Count == 1) Docs.SelectedItem = doc.Tab;
             UpdateEmptyState();

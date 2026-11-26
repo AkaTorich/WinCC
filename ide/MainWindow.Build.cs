@@ -23,11 +23,19 @@ namespace WinCC
         bool building;
         string buildFolder;
 
-        async void StartBuild(bool run)
+        /// <summary>Собрать; run — и запустить; debug — запустить под отладчиком (сведения для него — и в «Выпуске»).</summary>
+        async void StartBuild(bool run, bool debug = false)
         {
-            if (building) return;
-            if (project != null) await BuildProject(run);
-            else if (Current != null) await BuildCurrent(run);
+            if (building || Debugging) return;
+            if (project != null) await BuildProject(run, debug);
+            else if (Current != null) await BuildCurrent(run, debug);
+        }
+
+        /// <summary>Ключи wcc режима сборки, через пробел впереди; пусто — нет.</summary>
+        string ConfigSwitches(bool debug)
+        {
+            string s = BuildConfigs.Switches(CurrentConfig, debug);
+            return s.Length > 0 ? " " + s : "";
         }
 
         /// <summary>Сохранить изменённые файлы перед сборкой: заголовки тоже могли поменяться.</summary>
@@ -37,7 +45,7 @@ namespace WinCC
                 SaveDocument(other, false);
         }
 
-        async Task BuildCurrent(bool run)
+        async Task BuildCurrent(bool run, bool debug)
         {
             var doc = Current;
             if (doc == null) return;
@@ -48,13 +56,14 @@ namespace WinCC
             ProgramKind kind = CurrentKind;
             string source = doc.Path;
             string output = Compiler.OutputFor(source, kind);
-            await RunBuild(Path.GetDirectoryName(source), Compiler.Arguments(source, output, kind), output, kind, run,
+            string sw = ConfigSwitches(debug);
+            await RunBuild(Path.GetDirectoryName(source), Compiler.Arguments(source, output, kind) + sw, output, kind, run, debug,
                 Loc.F("Building", Path.GetFileName(source), Path.GetFileName(output), ProgramKinds.Title(kind)),
-                "wcc " + Compiler.Arguments(Path.GetFileName(source), Path.GetFileName(output), kind));
+                "wcc " + Compiler.Arguments(Path.GetFileName(source), Path.GetFileName(output), kind) + sw);
         }
 
         /// <summary>Сборка проекта целиком: все его .c и .asm одной программой, параметры — из проекта.</summary>
-        async Task BuildProject(bool run)
+        async Task BuildProject(bool run, bool debug)
         {
             var p = project;
             SaveModifiedFiles(null);
@@ -72,8 +81,8 @@ namespace WinCC
                 foreach (string f in missing) AppendOutput("    " + p.FullPath(f));
                 return;
             }
-            string args = p.Arguments();
-            await RunBuild(p.Folder, args, p.OutputPath, p.Kind, run,
+            string args = p.Arguments() + ConfigSwitches(debug);
+            await RunBuild(p.Folder, args, p.OutputPath, p.Kind, run, debug,
                 Loc.F("BuildingProject", p.Name, p.BuildFiles.Count(), p.OutputName, ProgramKinds.Title(p.Kind)),
                 "wcc " + args);
         }
@@ -89,7 +98,7 @@ namespace WinCC
             BottomTabs.SelectedItem = OutputTab;
         }
 
-        async Task RunBuild(string folder, string arguments, string output, ProgramKind kind, bool run, string title, string commandLine)
+        async Task RunBuild(string folder, string arguments, string output, ProgramKind kind, bool run, bool debug, string title, string commandLine)
         {
             buildFolder = folder;
             BeginOutput();
@@ -146,7 +155,17 @@ namespace WinCC
             if (!run) return;
             if (kind == ProgramKind.Dll)
             {
-                AppendOutput(Loc.T("DllNoRun"));
+                AppendOutput(Loc.T(debug ? "DbgNoDll" : "DllNoRun"));
+                return;
+            }
+            if (kind == ProgramKind.Library)
+            {
+                AppendOutput(Loc.T("LibNoRun"));
+                return;
+            }
+            if (debug)
+            {
+                StartDebugger(output, folder, kind);
                 return;
             }
             try

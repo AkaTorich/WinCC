@@ -71,14 +71,60 @@ namespace WinCC
             Add("Save", "Save", "Сохранить");
             Add("BuildTip", "Build (F7)", "Собрать (F7)");
             Add("Build", "Build", "Собрать");
-            Add("RunTip", "Build and run (F5)", "Собрать и запустить (F5)");
+            Add("RunTip", "Build and run without the debugger (Ctrl+F5)", "Собрать и запустить без отладчика (Ctrl+F5)");
             Add("Run", "Run", "Запустить");
+            Add("DebugTip", "Build and debug: breakpoints, steps, variables (F5)", "Собрать и отлаживать: точки останова, шаги, переменные (F5)");
+            Add("Debug", "Debug", "Отладка");
+            Add("Continue", "Continue", "Продолжить");
+            Add("ContinueTip", "Continue to the next breakpoint (F5)", "Продолжить до следующей точки останова (F5)");
+            Add("StopTip", "Stop debugging (Shift+F5)", "Остановить отладку (Shift+F5)");
+            Add("StepOverTip", "Step over: the next line, calls without going into them (F10)", "Шаг с обходом: следующая строка, вызовы — не заходя в них (F10)");
+            Add("StepIntoTip", "Step into: the next line, into called functions (F11)", "Шаг с заходом: следующая строка, с заходом в вызванные функции (F11)");
+            Add("StepOutTip", "Step out: run to the end of this function (Shift+F11)", "Шаг наружу: до конца этой функции (Shift+F11)");
+            Add("ConfigTip", "Debug — for the debugger: debug info, every variable in memory; Release — optimized, small and fast",
+                             "Отладка — для отладчика: сведения о программе, все переменные в памяти; Выпуск — оптимизированный код, маленький и быстрый");
+            Add("ConfigDebug", "Debug", "Отладка");
+            Add("ConfigRelease", "Release", "Выпуск");
+            Add("StatusConfig", "{0} · ", "{0} · ");
+            Add("Variables", "Variables", "Переменные");
+            Add("CallStack", "Call stack", "Стек вызовов");
+            Add("ColName", "Name", "Имя");
+            Add("ColValue", "Value", "Значение");
+            Add("ColType", "Type", "Тип");
+            Add("ColFunction", "Function", "Функция");
+            Add("ColPlace", "Place", "Место");
+            Add("NoVariables", "Variables appear here when the program stops under the debugger", "Переменные появятся здесь, когда программа остановится под отладчиком");
+            Add("Globals", "Globals", "Глобальные");
+            Add("DbgStarted", "Debugging {0}", "Отладка {0}");
+            Add("DbgExited", "The program exited with code {0}.", "Программа завершилась, код {0}.");
+            Add("DbgNoInfo", "No debug info next to the program: {0}", "Рядом с программой нет сведений для отладчика: {0}");
+            Add("DbgNoDll", "A DLL is not debugged on its own — debug the program that loads it.", "DLL сама не отлаживается — отлаживайте программу, которая её загружает.");
+            Add("DbgCannotStart", "Could not start the program under the debugger: {0}", "Не удалось запустить программу под отладчиком: {0}");
+            Add("DbgProgramBreak", "The program stopped itself (__debugbreak).", "Программа остановилась сама (__debugbreak).");
+            Add("DbgBreakpointAt", "Breakpoint: {0}, line {1}", "Точка останова: {0}, строка {1}");
+            Add("DbgAccessRead", "Access violation: reading address 0x{0}", "Обращение к памяти: чтение по адресу 0x{0}");
+            Add("DbgAccessWrite", "Access violation: writing to address 0x{0}", "Обращение к памяти: запись по адресу 0x{0}");
+            Add("DbgAccessExecute", "Access violation: running code at address 0x{0}", "Обращение к памяти: выполнение кода по адресу 0x{0}");
+            Add("DbgDivZero", "integer division by zero", "целочисленное деление на ноль");
+            Add("DbgStackOverflow", "stack overflow", "переполнение стека");
+            Add("DbgIllegal", "illegal instruction", "недопустимая команда");
+            Add("DbgArrayBounds", "array bounds exceeded", "выход за границы массива");
+            Add("DbgException", "Unhandled exception 0x{0} {1}", "Необработанное исключение 0x{0} {1}");
+            Add("DbgExceptionEnd", "Continue or Stop ends the program.", "«Продолжить» или «Стоп» завершат программу.");
+            Add("DbgUnreadable", "<cannot read>", "<не прочитать>");
+            Add("DbgAnonymous", "anonymous", "безымянное");
+            Add("DbgNoSource", "no source", "без исходника");
+            Add("DbgLine", "{0}, line {1}", "{0}, строка {1}");
             Add("KindLabel", "Program kind", "Вид программы");
-            Add("KindTip", "Console — runs in a console window, Window — a program with its own windows, DLL — a library",
-                           "Консоль — программа в окне консоли, Окно — программа со своими окнами, DLL — библиотека");
+            Add("KindTip", "Console — runs in a console window, Window — a program with its own windows, DLL — a library loaded while running, Library — your own .lib that programs build in",
+                           "Консоль — программа в окне консоли, Окно — программа со своими окнами, DLL — библиотека, загружаемая при работе, Библиотека — своя .lib, которую программы вшивают в себя");
             Add("KindConsole", "Console", "Консоль");
             Add("KindWindow", "Window", "Окно");
             Add("KindDll", "DLL", "DLL");
+            Add("KindLibrary", "Library", "Библиотека");
+            Add("LibNoRun", "A library does not run by itself — add its .lib to a program's project (or: wcc main.c mylib.lib).",
+                            "Библиотека сама не запускается — добавьте её .lib в проект программы (или: wcc main.c моя.lib).");
+            Add("GroupLibraries", "Libraries", "Библиотеки");
             Add("NoOpenFiles", "No open files", "Нет открытых файлов");
             Add("NoOpenFilesHint", "Create a new file or open an existing one — you can also drop it onto the window.",
                                    "Создайте новый файл или откройте готовый — его можно и перетащить в окно.");
@@ -131,8 +177,8 @@ namespace WinCC
             Add("FilterOpen", "C sources, resources and projects (*.c; *.h; *.rc; *.wccproj)|*.c;*.h;*.rc;*.wccproj|WinCC projects (*.wccproj)|*.wccproj|All files (*.*)|*.*",
                               "Исходники Си, ресурсы и проекты (*.c; *.h; *.rc; *.wccproj)|*.c;*.h;*.rc;*.wccproj|Проекты WinCC (*.wccproj)|*.wccproj|Все файлы (*.*)|*.*");
             Add("FilterProject", "WinCC projects (*.wccproj)|*.wccproj", "Проекты WinCC (*.wccproj)|*.wccproj");
-            Add("FilterProjectFiles", "C files and resources (*.c; *.h; *.asm; *.rc)|*.c;*.h;*.asm;*.rc|Resources (*.rc; *.res; *.ico; *.bmp; *.cur)|*.rc;*.res;*.ico;*.bmp;*.cur|All files (*.*)|*.*",
-                                      "Файлы Си и ресурсы (*.c; *.h; *.asm; *.rc)|*.c;*.h;*.asm;*.rc|Ресурсы (*.rc; *.res; *.ico; *.bmp; *.cur)|*.rc;*.res;*.ico;*.bmp;*.cur|Все файлы (*.*)|*.*");
+            Add("FilterProjectFiles", "C files, libraries and resources (*.c; *.h; *.asm; *.lib; *.rc)|*.c;*.h;*.asm;*.lib;*.rc|Libraries WinCC (*.lib)|*.lib|Resources (*.rc; *.res; *.ico; *.bmp; *.cur)|*.rc;*.res;*.ico;*.bmp;*.cur|All files (*.*)|*.*",
+                                      "Файлы Си, библиотеки и ресурсы (*.c; *.h; *.asm; *.lib; *.rc)|*.c;*.h;*.asm;*.lib;*.rc|Библиотеки WinCC (*.lib)|*.lib|Ресурсы (*.rc; *.res; *.ico; *.bmp; *.cur)|*.rc;*.res;*.ico;*.bmp;*.cur|Все файлы (*.*)|*.*");
             Add("OpenFileTitle", "Open file", "Открыть файл");
             Add("SaveFileTitle", "Save file", "Сохранить файл");
             Add("CannotOpenFile", "Could not open the file:\n{0}\n\n{1}", "Не удалось открыть файл:\n{0}\n\n{1}");
@@ -158,6 +204,14 @@ namespace WinCC
             Add("CannotCreateProject", "Could not create the project:\n{0}\n\n{1}", "Не удалось создать проект:\n{0}\n\n{1}");
             Add("NewProjectTitle", "New project", "Новый проект");
             Add("NewProjectName", "Program", "Программа");
+            Add("NewProjectNext", "Next…", "Дальше…");
+            Add("NewKindConsole", "A program in a console window: main.c with main()", "Программа в окне консоли: main.c с main()");
+            Add("NewKindWindow", "A program with its own windows: main.c with WinMain()", "Программа со своими окнами: main.c с WinMain()");
+            Add("NewKindDll", "A DLL: name.h with the declarations, name.c with __declspec(dllexport) functions and DllMain",
+                              "DLL: имя.h с объявлениями, имя.c с функциями __declspec(dllexport) и DllMain");
+            Add("NewKindLibrary", "Your own library .lib, built into the programs that take it: name.h and name.c, no main",
+                                  "Своя библиотека .lib, которую программы вшивают в себя: имя.h и имя.c, без main");
+            Add("NewLibraryName", "MyLibrary", "МояБиблиотека");
             Add("AddFoundFiles", "The folder already has C files: {0}.\nAdd them to the project?", "В папке уже есть файлы Си: {0}.\nДобавить их в проект?");
             Add("FileMissingRemove", "The file is missing on disk:\n{0}\n\nRemove it from the project?", "Файла нет на диске:\n{0}\n\nУбрать его из проекта?");
             Add("AddFilesTitle", "Add files to the project", "Добавить файлы в проект");
@@ -190,6 +244,7 @@ namespace WinCC
             Add("Macros", "Macros (-D)", "Макросы (-D)");
             Add("IncludeFolders", "#include folders (-I)", "Папки #include (-I)");
             Add("Dlls", "DLLs (-l)", "DLL (-l)");
+            Add("LibrariesHint", "Your .lib files go into the project as files: Add files… → *.lib", "Свои .lib входят в проект файлами: «Добавить файлы…» → *.lib");
             Add("StackMb", "Stack, MB", "Стек, МБ");
             Add("StackDefault", "0 — 8 MB", "0 — 8 МБ");
             Add("OtherArgs", "Other arguments", "Другие параметры");

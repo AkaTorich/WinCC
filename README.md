@@ -26,8 +26,13 @@ wcc a.c b.c util.asm -o prog.exe several sources into one program
 wcc app.c app.rc                 with resources: icon, version, strings, menus, dialogs… (a ready .res from rc.exe works too)
 wcc --gui app.c                  GUI program, no console
 wcc --dll lib.c                  → lib.dll (exports: __declspec(dllexport), otherwise all functions)
+wcc --lib a.c b.c -o mylib.lib   your own library (see "Your own libraries: DLL and .lib")
+wcc main.c mylib.lib -I inc      a program that takes it: only the functions it calls go in
 -l user32 / -l mylib             take functions from this DLL (your own DLL is looked up next to the source)
+-l ..\mydll\mydll                your own DLL by its path (the program imports it by name: put the DLL next to the .exe)
 -I dir  -D NAME=1  -S (assembly to .s)  --stack MB (default 8)  --run (build and run)
+-g                               debug info for the WinCC debugger next to the program (prog.wdbg)
+-O0                              no register variables: every variable in memory (for debugging)
 ```
 
 Errors are printed as `file:line: text` (messages are in Russian); warnings (`#warning`, an unknown `\x` escape in a
@@ -207,6 +212,43 @@ int main(void) {
 - **Errors:** functions return 0 or -1, `net_error()` says why — in Windows' own words, in the system language
   ("The server name or address could not be resolved (12007)"). Each thread has its own error.
 
+## Your own libraries: DLL and `.lib`
+
+Two kinds, both written in C like a program, both without `main`:
+
+| | DLL (`--dll`) | Library `.lib` (`--lib`) |
+|---|---|---|
+| What it is | a separate file the program loads while running | your functions built into every program that takes them |
+| Build | `wcc --dll mydll.c` → `mydll.dll` | `wcc --lib mylib.c util.c -o mylib.lib` |
+| What is visible | functions marked `__declspec(dllexport)` (none marked — all non-`static`) | every non-`static` function |
+| A program takes it | `wcc main.c -l mydll` or `-l ..\mydll\mydll` (by path); `mydll.dll` must lie next to the `.exe` | `wcc main.c ..\mylib\mylib.lib` — the `.lib` named on the command line |
+| The program declares | the functions, e.g. from `mydll.h` (`-I` its folder) | the same, from `mylib.h` |
+
+You name the libraries a program takes yourself (on the command line or as project files); wcc looks for nothing by
+itself apart from `-l name` next to the source and in System32.
+
+**`.lib`** — WinCC's own format, not Microsoft's (Visual Studio `.lib` files are not read). Inside (`cc.c`:
+`cc_build_lib`; `wcc.c`: `read_wcclib`) a text "WCCLIB 1": every C file after the preprocessor (its headers and macros
+already in, `#line` keeps the original file and line for errors and the debugger), `.asm` files as they are, `uses NAME` —
+its `#pragma comment(lib)` names. The library is compiled once when it is made, so its own errors show there. A program
+compiles it in as library code: functions nobody calls stay out (`strip.c`). Its functions are debugged like the
+program's (steps go in, variables are shown) while its sources stay where they were.
+
+**In the editor:** "New project…" asks the kind first (`ide\Projects\NewProjectDialog.cs`) and writes its template
+(`ide\Projects\Templates.cs`):
+
+| Kind | Template |
+|---|---|
+| Console | `main.c` with `main()` |
+| Window | `main.c` with `WinMain()` |
+| DLL | `name.h` with the declarations, `name.c` with `__declspec(dllexport)` functions and `DllMain` |
+| Library | `name.h` and `name.c` with functions, no `main`; F7 builds `name.lib` |
+
+"New" (Ctrl+N) writes a file of the chosen kind too; a new `.c` in a library project starts with `#include "name.h"`.
+A program's project takes a `.lib` as a file ("Add files…" → `*.lib`; the panel shows it under **Libraries**) and its
+own DLLs in Properties → DLLs (`-l`); the library's header folder goes into `#include` folders. A DLL or a library does
+not run by itself.
+
 ## Optimization (1.3.0)
 
 Program and library code is always compiled to be fast and compact; there are no flags for it. Compared with 1.2.0 on
@@ -290,12 +332,13 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 **Features and where they live:**
 - Window, buttons, status bar, shortcuts, dropping files onto the window — `ide\MainWindow.xaml`, `MainWindow.xaml.cs`.
   Keys: Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close tab, F7 or Ctrl+B build,
-  F5 build and run, F1 — the manual (book button on the right of the toolbar), Ctrl+Shift+E — show / hide the project
+  F5 debug, Ctrl+F5 run without the debugger, F9 breakpoint, F10 / F11 / Shift+F11 steps, Shift+F5 stop, F1 — the manual (book button on the right of the toolbar), Ctrl+Shift+E — show / hide the project
   panel (the project button on the left of the toolbar).
 - A project is a `name.wccproj` file (`ide\Projects\Project.cs`): UTF-8 text, `key=value` lines, paths relative to the
-  project folder: `kind=` Console / Window / Dll, `output=` output file name (default — the project name), `file=` a project
+  project folder: `kind=` Console / Window / Dll / Library, `config=` Debug / Release, `output=` output file name (default — the project name), `file=` a project
   file (one per line, in build order), `define=` a macro (`-D`), `include=` an `#include` folder (`-I`), `lib=` a DLL
-  (`-l`), `stack=` stack in MB, `options=` any other wcc arguments as is; lines starting with `#` are comments.
+  (`-l`, a name or a path), `stack=` stack in MB, `options=` any other wcc arguments as is; lines starting with `#` are
+  comments. `file=` takes `.c`, `.h`, `.asm`, `.rc`, `.res` and your own `.lib`.
   `.c`, `.asm` and `.rc`/`.res` resources go into the program; headers and other files (icons, images) are only listed.
   Sample projects: `examples\calc\Калькулятор.wccproj`, `examples\wui\Показ WUI.wccproj`.
 - The project side panel — `ide\Projects\ProjectPanel.xaml(.cs)`: project name, files grouped as Sources / Headers /
@@ -312,7 +355,8 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 - Project properties — `ide\Projects\ProjectDialog.cs`: kind, output file, macros, `#include` folders, DLLs (lists
   separated by `;`), stack, other arguments.
 - New, open, close project, add and remove files, recent projects — `MainWindow.Project.cs`. A new project in a folder
-  that already has C files (subfolders included) offers to include them; in an empty folder it creates `main.c` from a template. A `.wccproj`
+  that already has C files (subfolders included) offers to include them; in an empty folder it writes the template of
+  the chosen kind (see "Your own libraries: DLL and `.lib`"). A `.wccproj`
   also opens via Open (Ctrl+O), by dropping it onto the window and from the command line. While a project is open,
   the "program kind" selector writes into the project.
 - File tabs (new, open, save, close with an unsaved-changes prompt) — `MainWindow.Files.cs`; one open file —
@@ -343,6 +387,35 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 - Program kind (Console / Window / DLL) — `Build\ProgramKind.cs`.
 - Remembered: interface language, program kind, open files, front tab, open project, recent projects, project panel (shown, width), bottom
   panel height — `Settings.cs` (`%APPDATA%\WinCC\settings.txt`).
+
+**Build modes** (the list on the toolbar; a project keeps its own in `config=`): **Debug** — `wcc -g -O0`: debug info
+next to the program (`prog.wdbg`), every variable in memory; **Release** — optimized code, no debug info (an old `.wdbg`
+is deleted). F5 in Release builds with `-g`: the debugger then also shows variables kept in registers.
+
+**Debugger** (`ide\Debugger\`, `MainWindow.Debug.cs`):
+- F9 or a click left of the line numbers — a breakpoint (red dot); breakpoints follow the text when lines are added or
+  removed above them and are remembered between runs. A line without code moves the breakpoint to the next line with code.
+- F5 — build and start under the debugger (Debug button), then "Continue"; Ctrl+F5 — run without the debugger;
+  Shift+F5 — stop; F10 — step over (calls run through), F11 — step into (into the program's own functions; library and
+  Windows code is run through), Shift+F11 — step out (to the end of the function). While the program is stopped the
+  current line is marked with a yellow arrow and the editors are read-only.
+- **Variables** tab: the stopped function's parameters and locals declared so far, then the program's globals; structs,
+  arrays and pointers expand (a `char *` shows its string, a struct pointer — the struct); a value changed since the
+  last stop is red. **Call stack** tab: the functions down to `main`; a click shows that function's line and variables.
+- An unhandled exception (access violation, division by zero, stack overflow…) stops the program at the faulting line
+  of the program (also when it happened inside the library, e.g. `strlen(NULL)`), with the reason in Output; Continue
+  or Stop then ends the program. `__debugbreak()` stops it too; `OutputDebugString` goes to Output.
+- How it works: `DebugEngine.cs` — the Windows debug API (`CreateProcess` with `DEBUG_ONLY_THIS_PROCESS`,
+  `WaitForDebugEvent` in its own thread), breakpoints are `int3` bytes, steps use the trap flag and a temporary breakpoint
+  at the return address; the call stack follows `rbp` (with the registers each function saved). `DebugInfo.cs` reads
+  `.wdbg`, `Values.cs` turns memory into C values, `Native.cs` — the kernel32 calls.
+- `.wdbg` is text (`compiler\asm.c`, `dbg_text`): `file N name`, `func START END name` (RVAs, hex), after it `frame NSAVE PAD
+  regs…` and `var LOC LINE TYPE name` (LOC `s-16` = `[rbp-16]`, `S-16` — the address is there, `rrbx` — in a register;
+  LINE 0 — a parameter), `line RVA FILE LINE`, `global RVA LINE TYPE name`, `struct ID SIZE s|u` + `field OFF BITOFF BITS
+  TYPE name`. TYPE: `c C b i2 i4 i8 u2 u4 u8 f4 f8 e4 v F`, `*T`, `[N]T`, `sID`.
+- Headless check: `WinCC.exe --debugtest report.txt prog.exe file.c:line[,line] commands` (c continue, n step over,
+  s step into, o step out, x stop) writes every stop with its stack and variables; `--window shot.png … debug:file.c:line`
+  — a screenshot of the window stopped there.
 
 **Headless check:** `WinCC.exe --window shot.png [WxH] [empty] [project:file.wccproj] [lang:en|ru]` — a screenshot of
 the window with sample code, output and errors (`Samples.cs`), nothing is remembered; `empty` — a window without files;

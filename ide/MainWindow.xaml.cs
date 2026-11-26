@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using ThemeLibrary;
 using WinCC.Build;
+using WinCC.Debugger;
 using WinCC.Documents;
 
 namespace WinCC
@@ -36,8 +37,8 @@ namespace WinCC
             KindBox.SelectionChanged += (s, e) => OnKindChosen();
             BottomRow.Height = new GridLength(settings.BottomShare, GridUnitType.Star);
 
-            NewButton.Click += (s, e) => NewFile();
-            HintNewButton.Click += (s, e) => NewFile();
+            NewButton.Click += (s, e) => NewFileByKind();
+            HintNewButton.Click += (s, e) => NewFileByKind();
             OpenButton.Click += (s, e) => OpenFiles();
             HintOpenButton.Click += (s, e) => OpenFiles();
             SaveButton.Click += (s, e) => SaveCurrent(false);
@@ -55,6 +56,7 @@ namespace WinCC
             Activated += (s, e) => UpdateCompilerState();
 
             InitProjectPanel();
+            InitDebug();
             UpdateCompilerState();
             UpdateErrors();
             UpdateEmptyState();
@@ -91,7 +93,7 @@ namespace WinCC
                 if (File.Exists(f)) OpenPath(f, false);
             if (settings.Active >= 0 && settings.Active < Docs.Items.Count) Docs.SelectedIndex = settings.Active;
             if (settings.Project != null && File.Exists(settings.Project)) OpenProject(settings.Project, Docs.Items.Count == 0);
-            if (Docs.Items.Count == 0) NewFile();
+            if (Docs.Items.Count == 0) NewFileByKind();
         }
 
         void OnActiveChanged()
@@ -106,10 +108,11 @@ namespace WinCC
             bool empty = Docs.Items.Count == 0;
             EmptyHint.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
             Docs.Visibility = empty ? Visibility.Hidden : Visibility.Visible;
-            bool buildable = (!empty || project != null) && !building;
+            bool buildable = (!empty || project != null) && !building && !Debugging;
             SaveButton.IsEnabled = !empty && !building;
             BuildButton.IsEnabled = buildable;
             RunButton.IsEnabled = buildable;
+            if (!Debugging) DebugButton.IsEnabled = buildable;
         }
 
         void UpdateStatus()
@@ -119,7 +122,8 @@ namespace WinCC
                             : project != null ? project.Path : "";
             CaretStatus.Text = doc == null ? "" : Loc.F("Caret", doc.Editor.CaretRow, doc.Editor.CaretColumn);
             EncodingStatus.Text = doc == null ? "" : doc.EncodingName;
-            KindStatus.Text = (project != null ? Loc.F("StatusProject", project.Name) : "") + Loc.F("StatusKind", ProgramKinds.Title(CurrentKind));
+            KindStatus.Text = (project != null ? Loc.F("StatusProject", project.Name) : "") + Loc.F("StatusConfig", BuildConfigs.Title(CurrentConfig))
+                              + Loc.F("StatusKind", ProgramKinds.Title(CurrentKind));
             ProjectSide.SetActiveFile(doc != null ? doc.Path : null);
         }
 
@@ -148,6 +152,8 @@ namespace WinCC
         {
             Loc.Apply(settings.Language);
             foreach (ComboBoxItem item in KindBox.Items) item.Content = ProgramKinds.Title((ProgramKind)item.Tag);
+            foreach (ComboBoxItem item in ConfigBox.Items) item.Content = BuildConfigs.Title((BuildConfig)item.Tag);
+            UpdateDebugUi();
             foreach (var doc in Documents) doc.RefreshTexts();
             ProjectSide.Refresh();
             UpdateCompilerState();
@@ -160,14 +166,14 @@ namespace WinCC
             var mods = Keyboard.Modifiers;
             Key key = e.Key == Key.System ? e.SystemKey : e.Key;
             bool handled = true;
-            if (mods == ModifierKeys.Control && key == Key.N) NewFile();
+            if (DebugKey(mods, key)) { }
+            else if (mods == ModifierKeys.Control && key == Key.N) NewFileByKind();
             else if (mods == ModifierKeys.Control && key == Key.O) OpenFiles();
             else if (mods == ModifierKeys.Control && key == Key.S) SaveCurrent(false);
             else if (mods == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.S) SaveCurrent(true);
             else if (mods == ModifierKeys.Control && (key == Key.W || key == Key.F4)) { if (Current != null) CloseDocument(Current); }
             else if (mods == ModifierKeys.None && key == Key.F7) StartBuild(false);
             else if (mods == ModifierKeys.Control && key == Key.B) StartBuild(false);
-            else if (mods == ModifierKeys.None && key == Key.F5) StartBuild(true);
             else if (mods == ModifierKeys.None && key == Key.F1) OpenManual();
             else if (mods == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.E) ShowProjectPanel(!ProjectPanelShown);
             else handled = false;
@@ -199,12 +205,14 @@ namespace WinCC
                 if (!ConfirmDiscard(doc)) { e.Cancel = true; return; }
             }
             compiler.Cancel();
+            if (engine != null) engine.Command(DebugCommand.Stop);
             if (snapshotMode) return;
+            SaveBreakpoints();
             settings.Files.Clear();
             foreach (var doc in Documents)
                 if (!doc.IsUntitled) settings.Files.Add(doc.Path);
             settings.Active = Docs.SelectedIndex;
-            if (project == null) settings.Kind = CurrentKind;
+            if (project == null) { settings.Kind = CurrentKind; settings.Config = CurrentConfig; }
             settings.Project = project != null ? project.Path : null;
             if (ProjectPanelShown && ProjectColumn.ActualWidth > 0) settings.PanelWidth = ProjectColumn.ActualWidth;
             if (BottomRow.ActualHeight > 0 && EditorRow.ActualHeight > 0)

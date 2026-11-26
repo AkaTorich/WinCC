@@ -19,6 +19,17 @@ namespace WinCC
             ThemeManager.Apply("Cyberpunk");       // у окна одна тема — «Киберпанк»
             var args = e.Args;
 
+            // --debugtest отчёт.txt программа.exe файл.c:строка… команды: проверка отладчика без окна (Debugger\DebugTest.cs)
+            if (args.Length >= 3 && args[0] == "--debugtest")
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                Loc.Apply(UiLanguage.English);
+                int rc = 1;
+                await Task.Run(() => { rc = Debugger.DebugTest.Run(args); });
+                Shutdown(rc);
+                return;
+            }
+
             // --window <файл.png> [ШxВ] [empty] [project:файл.wccproj] [lang:en|ru]: снимок окна без показа —
             // с образцом кода, выводом и ошибками или с открытым проектом; lang — язык окна
             if (args.Length >= 2 && args[0] == "--window")
@@ -28,9 +39,11 @@ namespace WinCC
                 bool empty = false;
                 string projectFile = null;
                 UiLanguage lang = Loc.SystemDefault;
+                string debugAt = null;
                 foreach (string a in args.Skip(2))
                 {
-                    if (a.StartsWith("project:")) projectFile = a.Substring(8);
+                    if (a.StartsWith("debug:")) debugAt = a.Substring(6);
+                    else if (a.StartsWith("project:")) projectFile = a.Substring(8);
                     else if (a.StartsWith("lang:")) lang = Loc.Parse(a.Substring(5));
                     else if (a == "empty") empty = true;
                     else if (a.Contains("x"))
@@ -42,6 +55,21 @@ namespace WinCC
                 }
                 Loc.Apply(lang);
                 var win = new MainWindow(true) { Width = w, Height = h };
+                if (debugAt != null)
+                {
+                    // debug:файл.c:строка — собрать под отладчик, остановиться на строке и снять окно
+                    int colon = debugAt.LastIndexOf(':');
+                    win.WindowStartupLocation = WindowStartupLocation.Manual;
+                    win.Left = -30000;
+                    win.ShowActivated = false;
+                    win.Show();
+                    await win.DebugSnapshotRun(debugAt.Substring(0, colon), int.Parse(debugAt.Substring(colon + 1)));
+                    win.SaveSnapshot(args[1], w, h, false);
+                    win.StopDebuggingForSnapshot();
+                    await Task.Delay(500);
+                    Shutdown();
+                    return;
+                }
                 if (projectFile != null) win.OpenProject(projectFile, true);
                 else if (!empty)
                 {

@@ -16,6 +16,9 @@ namespace WinCC
     {
         public UiLanguage Language = Loc.SystemDefault;
         public ProgramKind Kind = ProgramKind.Console;
+        public BuildConfig Config = BuildConfig.Debug;
+        /// <summary>Точки останова: «путь|строка».</summary>
+        public readonly List<string> Breakpoints = new List<string>();
         public readonly List<string> Files = new List<string>();
         public int Active = -1;
         public double BottomShare = 0.36;
@@ -48,6 +51,8 @@ namespace WinCC
                     {
                         case "language": s.Language = Loc.Parse(value); break;
                         case "kind": s.Kind = ProgramKinds.Parse(value); break;
+                        case "config": s.Config = BuildConfigs.Parse(value); break;
+                        case "breakpoint": if (value.Length > 0) s.Breakpoints.Add(value); break;
                         case "file": if (value.Length > 0) s.Files.Add(value); break;
                         case "active": if (int.TryParse(value, out n)) s.Active = n; break;
                         case "project": s.Project = value.Length > 0 ? value : null; break;
@@ -75,6 +80,8 @@ namespace WinCC
                 var sb = new StringBuilder();
                 sb.AppendLine("language=" + Loc.Code(Language));
                 sb.AppendLine("kind=" + Kind);
+                sb.AppendLine("config=" + Config);
+                foreach (string b in Breakpoints) sb.AppendLine("breakpoint=" + b);
                 foreach (string f in Files) sb.AppendLine("file=" + f);
                 sb.AppendLine("active=" + Active);
                 sb.AppendLine("bottom=" + BottomShare.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));

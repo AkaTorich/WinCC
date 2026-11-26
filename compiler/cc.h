@@ -264,6 +264,11 @@ extern char *cc_file_asm;           // file-scope asm("...") of all sources, or 
 
 // codegen.c: AST -> assembly text
 char *cc_codegen_text(Obj *prog);
+// wcc -g: frames, variables and types for the debugger (.dbgvar...; asm.c writes them out, cc_win_debug_text);
+// wcc -O0: no locals in registers
+extern int cc_debug_info, cc_no_regalloc;
+// asm.c, wcc -g: the debug info of the last cc_assemble_win (the ".wdbg" text), or 0
+extern char *cc_win_debug_text;
 
 typedef struct {
     u8 *code;
@@ -336,6 +341,9 @@ int cc_build_dll(const CcSource *sources, int count, const CcSymbol *externs,
 int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget *t,
                  u8 **out, u64 *out_size, char **asm_text);
 extern int cc_first_lib_unit;       // codegen: units from this number on are the library (0 = none)
+// wcc --lib: the programmer's own library (the "WCCLIB 1" text: its C files after the preprocessor, its .asm files,
+// the #pragma comment(lib) names it uses) -- a program takes it with "wcc main.c mylib.lib"
+int cc_build_lib(const CcSource *sources, int count, char **out);
 // A library in source form: #pragma comment(lib, "name") of a compiled unit asks for it; the hook
 // gives its C files (count, 0 = it is a DLL), they are compiled as library units too.
 extern int (*cc_source_lib)(const char *name, const CcSource **files);

@@ -11,6 +11,7 @@ typedef struct Lib {
     char name[MAX_PATH];        // as the import table names it: "user32.dll"
     wchar_t path[MAX_PATH * 2]; // where it was found, "" = not yet looked for
     int loaded, missing;
+    wchar_t given[MAX_PATH * 2];    // -l with a folder (..\mydll\mydll): that very file, before the usual places
 } Lib;
 
 static Lib g_libs[128];
@@ -73,12 +74,23 @@ void winlink_add(const char *lib)
         n[len -= 4] = 0;
     if (!(len > 4 && !_stricmp(n + len - 4, ".dll")))
         strcat(n, ".dll");
+    // a path names the file; the import table names the DLL by its file name only (Windows finds it next to the .exe)
+    const char *base = n;
+    for (const char *p = n; *p; p++)
+        if (*p == '\\' || *p == '/') base = p + 1;
     for (int i = 0; i < g_nlib; i++)
-        if (!_stricmp(g_libs[i].name, n))
+        if (!_stricmp(g_libs[i].name, base))
             return;
     if (g_nlib < 128) {
-        memset(&g_libs[g_nlib], 0, sizeof(Lib));
-        strcpy(g_libs[g_nlib++].name, n);
+        Lib *l = &g_libs[g_nlib++];
+        memset(l, 0, sizeof(Lib));
+        if (base != n) {
+            wchar_t w[MAX_PATH * 2];
+            MultiByteToWideChar(CP_UTF8, 0, n, -1, w, MAX_PATH * 2);
+            if (!GetFullPathNameW(w, MAX_PATH * 2, l->given, 0))
+                wcsncpy(l->given, w, MAX_PATH * 2 - 1);
+        }
+        strcpy(l->name, base);
     }
 }
 
@@ -86,6 +98,10 @@ static int find_file(Lib *l)
 {
     wchar_t wname[MAX_PATH];
     MultiByteToWideChar(CP_UTF8, 0, l->name, -1, wname, MAX_PATH);
+    if (l->given[0] && GetFileAttributesW(l->given) != INVALID_FILE_ATTRIBUTES) {
+        wcsncpy(l->path, l->given, MAX_PATH * 2 - 1);
+        return 1;
+    }
     for (int i = 0; i < g_ndirs; i++) {
         swprintf(l->path, MAX_PATH * 2, L"%ls\\%ls", g_dirs[i], wname);
         if (GetFileAttributesW(l->path) != INVALID_FILE_ATTRIBUTES)

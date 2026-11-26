@@ -44,7 +44,9 @@ namespace WinCC.Editor
                 if (origin.Y + at.Height < view.Top) continue;
 
                 var band = new Rect(view.Left, origin.Y, view.Width, at.Height);
-                if (Editor.IsErrorLine(line)) dc.DrawRectangle(SyntaxColors.ErrorLine, null, band);
+                if (line == Editor.ExecLineIndex) dc.DrawRectangle(SyntaxColors.ExecLine, null, band);
+                else if (Editor.IsBreakpointLine(line)) dc.DrawRectangle(SyntaxColors.BreakpointLine, null, band);
+                else if (Editor.IsErrorLine(line)) dc.DrawRectangle(SyntaxColors.ErrorLine, null, band);
                 else if (Editor.IsWarningLine(line)) dc.DrawRectangle(SyntaxColors.WarningLine, null, band);
                 else if (line == Editor.CaretLineIndex) dc.DrawRectangle(SyntaxColors.CurrentLine, null, band);
 

@@ -113,6 +113,8 @@ struct Asm {
     const char *dfile[256];
     int dfile_len[256];
     int ndfile;
+    struct DbgExtra *dextra;
+    int ndx, dxcap;
     // the functions for .pdata (pass 1)
     SehProc *procs;
     int nproc, proccap;
@@ -125,6 +127,8 @@ struct Asm {
 
 typedef struct DbgLine { int off, line, file; } DbgLine;                 // text offset -> file, line
 typedef struct DbgFunc { int start, end; const char *name; int len; } DbgFunc;
+// wcc -g: .dbgframe/.dbgvar (of function func), .dbgglobal, .dbgstruct, .dbgfield -- the rest of the line as it is
+typedef struct DbgExtra { char kind; int func; const char *s; int len; } DbgExtra;
 
 typedef struct BaseReloc {
     struct BaseReloc *next;
@@ -1780,6 +1784,13 @@ static void dbg_directive(Asm *as, const char *m, int mlen, const char *p)
         DbgFunc *f = &as->dfuncs[as->ndf++];
         f->start = f->end = off;
         f->len = rest_of_line(p, &f->name);
+    } else if (!word_eq(m, mlen, ".dbgend")) {      // .dbgframe .dbgvar .dbgglobal .dbgstruct .dbgfield
+        as->dextra = grow(as->dextra, as->ndx, &as->dxcap, (int)sizeof(DbgExtra));
+        DbgExtra *x = &as->dextra[as->ndx++];
+        x->kind = word_eq(m, mlen, ".dbgframe") ? 'F' : word_eq(m, mlen, ".dbgvar") ? 'v' :
+                  word_eq(m, mlen, ".dbgglobal") ? 'g' : word_eq(m, mlen, ".dbgstruct") ? 's' : 'f';
+        x->func = as->ndf - 1;
+        x->len = rest_of_line(p, &x->s);
     } else if (as->ndf) {                   // .dbgend
         as->dfuncs[as->ndf - 1].end = off;
     }
@@ -2119,7 +2130,8 @@ static void assemble_line(Asm *as, const char *p)
         return;
     }
     if (word_eq(m, mlen, ".loc") || word_eq(m, mlen, ".dbgfile") || word_eq(m, mlen, ".dbgfunc") ||
-        word_eq(m, mlen, ".dbgend")) {
+        word_eq(m, mlen, ".dbgend") || word_eq(m, mlen, ".dbgframe") || word_eq(m, mlen, ".dbgvar") ||
+        word_eq(m, mlen, ".dbgglobal") || word_eq(m, mlen, ".dbgstruct") || word_eq(m, mlen, ".dbgfield")) {
         where_in_c(as, m, mlen, p);
         if (as->pe && as->pass == 1)
             dbg_directive(as, m, mlen, p);
@@ -2496,6 +2508,98 @@ static void dbg_write(Asm *as, u8 *p, int text_rva)
         o->line = (u32)as->dlines[i].line;
         o->file = (u32)as->dlines[i].file;
     }
+}
+
+// ---- wcc -g: the debug info of a Windows program as text (prog.wdbg, the IDE's debugger reads it) ----
+// wdbg 1
+// file N NAME                      a source of the line table (as the compiler was given it)
+// func START END NAME              a C function's code [START, END) as RVAs (hex)
+//   frame NSAVE PAD REG...         after its func: the registers pushed after rbp
+//   var LOC LINE TYPE NAME         after its func: a parameter or local (codegen.c, .dbgvar)
+// line RVA FILE LINE               from RVA on, the code is this line of file FILE
+// global RVA FILE LINE TYPE NAME   a global variable, FILE its source
+// struct ID SIZE s|u / field OFF BITOFF BITS TYPE NAME
+char *cc_win_debug_text;
+
+typedef struct { char *p; int len, cap; } DbgText;
+
+static void dt_add(DbgText *t, const char *s, int n)
+{
+    if (t->len + n + 1 > t->cap) {
+        int cap = t->cap ? t->cap : 65536;
+        while (t->len + n + 1 > cap)
+            cap *= 2;
+        char *np = cc_alloc((size_t)cap);
+        for (int i = 0; i < t->len; i++)
+            np[i] = t->p[i];
+        t->p = np;
+        t->cap = cap;
+    }
+    for (int i = 0; i < n; i++)
+        t->p[t->len++] = s[i];
+    t->p[t->len] = 0;
+}
+
+static void dt_printf(DbgText *t, const char *fmt, ...)
+{
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = cc_vformat(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    if (n >= (int)sizeof(buf))
+        n = (int)sizeof(buf) - 1;
+    dt_add(t, buf, n);
+}
+
+static char *dbg_text(Asm *as, int text_rva)
+{
+    DbgText t = { 0 };
+    dt_printf(&t, "wdbg 1\n");
+    for (int i = 0; i < as->ndfile; i++) {
+        dt_printf(&t, "file %d ", i);
+        dt_add(&t, as->dfile[i], as->dfile_len[i]);
+        dt_add(&t, "\n", 1);
+    }
+    int xi = 0;
+    for (int i = 0; i < as->ndf; i++) {
+        DbgFunc *f = &as->dfuncs[i];
+        dt_printf(&t, "func %x %x ", text_rva + f->start, text_rva + f->end);
+        dt_add(&t, f->name, f->len);
+        dt_add(&t, "\n", 1);
+        for (int k = 0; k < as->ndx; k++) {       // its frame and variables (in order, so mostly a scan from xi)
+            DbgExtra *x = &as->dextra[(xi + k) % as->ndx];
+            if (x->func != i || (x->kind != 'F' && x->kind != 'v'))
+                continue;
+            dt_add(&t, x->kind == 'F' ? "frame " : "var ", x->kind == 'F' ? 6 : 4);
+            dt_add(&t, x->s, x->len);
+            dt_add(&t, "\n", 1);
+        }
+        while (xi < as->ndx && as->dextra[xi].func <= i)
+            xi++;
+    }
+    for (int i = 0; i < as->ndl; i++)
+        dt_printf(&t, "line %x %d %d\n", text_rva + as->dlines[i].off, as->dlines[i].file, as->dlines[i].line);
+    for (int k = 0; k < as->ndx; k++) {
+        DbgExtra *x = &as->dextra[k];
+        if (x->kind == 'g') {                   // LABEL LINE TYPE NAME: the label becomes its RVA
+            int n = 0;
+            while (n < x->len && x->s[n] != ' ')
+                n++;
+            Label *l = find_label(as, x->s, n);
+            if (!l || !l->defined || l->section == SEC_TLS)
+                continue;
+            u64 rva = (u64)(as->base[l->section] + l->offset) - (u64)as->image_buf;
+            dt_printf(&t, "global %x", (unsigned)rva);
+            dt_add(&t, x->s + n, x->len - n);
+            dt_add(&t, "\n", 1);
+        } else if (x->kind == 's' || x->kind == 'f') {
+            dt_add(&t, x->kind == 's' ? "struct " : "field ", x->kind == 's' ? 7 : 6);
+            dt_add(&t, x->s, x->len);
+            dt_add(&t, "\n", 1);
+        }
+    }
+    return t.p;
 }
 
 typedef struct { Label *l; } ExpEnt;
@@ -3425,6 +3529,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         sec[i].Characteristics = flags[i];
     }
 
+    cc_win_debug_text = cc_debug_info ? dbg_text(as, text_rva) : 0;
     *out = file;
     *out_size = (u64)fpos;
     return 1;

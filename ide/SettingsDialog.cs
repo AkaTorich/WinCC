@@ -10,7 +10,7 @@ namespace WinCC
     {
         readonly ComboBox languageBox = new ComboBox { Width = 180, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
 
-        public UiLanguage Language { get; private set; }
+        public new UiLanguage Language { get; private set; }
 
         public SettingsDialog(Window owner, UiLanguage current)
         {

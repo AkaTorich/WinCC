@@ -234,6 +234,138 @@ static const char *win_entry_stub(CcWinTarget *t, const char *text)
                      kind, entries[kind]);
 }
 
+// ---- wcc --lib: a library of the programmer's own (prog.lib, WinCC's format, not Microsoft's) ----
+// WCCLIB 1
+// uses NAME                  a #pragma comment(lib) of its sources (a DLL or a library in source form)
+// source BYTES NAME          then BYTES of text: a C file after the preprocessor (#line keeps its file
+//                            and lines for errors and the debugger), or an .asm file as it is
+// A program takes it as a library: its functions nobody calls stay out (strip.c).
+
+typedef struct { char *p; int len, cap; } LibBuf;
+
+static void lb_add(LibBuf *b, const char *s, int n)
+{
+    if (b->len + n + 1 > b->cap) {
+        int cap = b->cap ? b->cap : 65536;
+        while (b->len + n + 1 > cap)
+            cap *= 2;
+        char *np = cc_alloc((size_t)cap);
+        for (int i = 0; i < b->len; i++)
+            np[i] = b->p[i];
+        b->p = np;
+        b->cap = cap;
+    }
+    for (int i = 0; i < n; i++)
+        b->p[b->len++] = s[i];
+    b->p[b->len] = 0;
+}
+
+static void lb_str(LibBuf *b, const char *s) { lb_add(b, s, cc_strlen(s)); }
+
+static int is_hex_digit(int c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+
+// a string literal again from its elements (adjacent literals are one token by now): printable ASCII as it is,
+// the rest as escapes -- \ooo in a narrow one, \xHHHH in a wide one (a hex digit after it opens a new literal)
+static void lb_string(LibBuf *b, Token *t)
+{
+    static const char *prefix[] = { "", "u8", "u", "U", "L" };
+    const char *pre = prefix[t->str_kind];
+    int es = cc_str_elem_size(t->str_kind);
+    lb_str(b, pre);
+    lb_add(b, "\"", 1);
+    int hex_open = 0;
+    for (int i = 0; i + 1 < t->str_len; i++) {
+        u32 v = 0;
+        for (int k = 0; k < es; k++)
+            v |= (u32)(u8)t->str[i * es + k] << (8 * k);
+        if (v >= 0x20 && v < 0x7F && v != '"' && v != '\\') {
+            if (hex_open && is_hex_digit((int)v)) {
+                lb_add(b, "\" ", 2);
+                lb_str(b, pre);
+                lb_add(b, "\"", 1);
+            }
+            char c = (char)v;
+            lb_add(b, &c, 1);
+            hex_open = 0;
+        } else if (es == 1) {
+            char o[4] = { '\\', (char)('0' + ((v >> 6) & 3)), (char)('0' + ((v >> 3) & 7)), (char)('0' + (v & 7)) };
+            lb_add(b, o, 4);                // \ooo: always three digits, so a digit after it stays a digit
+            hex_open = 0;
+        } else {
+            lb_str(b, cc_format("\\x%x", (unsigned)v));
+            hex_open = 1;
+        }
+    }
+    lb_add(b, "\"", 1);
+}
+
+static void lb_quoted_path(LibBuf *b, const char *s)
+{
+    lb_add(b, "\"", 1);
+    for (; *s; s++) {
+        if (*s == '\\' || *s == '"')
+            lb_add(b, "\\", 1);
+        lb_add(b, s, 1);
+    }
+    lb_add(b, "\"", 1);
+}
+
+// A C file after the preprocessor, as text a later compile reads the same way
+static char *preprocessed_text(const char *name, const char *text)
+{
+    Token *t = cc_preprocess(cc_tokenize(name, text));
+    LibBuf b = { 0 };
+    const char *file = 0;
+    int line = 0;
+    for (; t->kind != TK_EOF; t = t->next) {
+        const char *tf = t->file ? t->file : "";
+        if (!file || (tf != file && !cc_streq(tf, file))) {
+            lb_str(&b, cc_format("\n#line %d ", t->line));
+            lb_quoted_path(&b, tf);
+            lb_add(&b, "\n", 1);
+            file = tf;
+            line = t->line;
+        } else if (t->line != line) {
+            if (t->line > line && t->line - line <= 8)
+                for (; line < t->line; line++)
+                    lb_add(&b, "\n", 1);
+            else
+                lb_str(&b, cc_format("\n#line %d\n", t->line));
+            line = t->line;
+        } else
+            lb_add(&b, " ", 1);
+        if (t->kind == TK_STR)
+            lb_string(&b, t);
+        else
+            lb_add(&b, t->loc, t->len);
+    }
+    lb_add(&b, "\n", 1);
+    return b.p;
+}
+
+int cc_build_lib(const CcSource *sources, int count, char **out)
+{
+    cc_last_error[0] = 0;
+    if (cc_setjmp(&g_jmp))
+        return 0;
+    // the whole library must compile now: its errors are its own, not the programs' that take it
+    compile_to_asm(sources, count);
+    LibBuf b = { 0 };
+    lb_str(&b, "WCCLIB 1\n");
+    for (int i = 0; i < cc_pragma_lib_count; i++)
+        lb_str(&b, cc_format("uses %s\n", cc_pragma_libs[i]));
+    for (int i = 0; i < count; i++) {
+        if (is_resource_file(sources[i].name))
+            continue;
+        int asm_file = ends_with(sources[i].name, ".asm") || ends_with(sources[i].name, ".s");
+        const char *text = asm_file ? sources[i].text : preprocessed_text(sources[i].name, sources[i].text);
+        lb_str(&b, cc_format("source %d %s\n", cc_strlen(text), sources[i].name));
+        lb_str(&b, text);
+    }
+    *out = b.p;
+    return 1;
+}
+
 int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget *t,
                  u8 **out, u64 *out_size, char **asm_text)
 {

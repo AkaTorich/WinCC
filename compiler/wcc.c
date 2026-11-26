@@ -176,10 +176,13 @@ static void usage(void)
            "  --console     консольная программа (так по умолчанию)\n"
            "  --gui         оконная программа, без консоли (так же, если есть WinMain и нет main)\n"
            "  --dll         библиотека DLL\n"
+           "  --lib         своя библиотека .lib: программа берёт её так — wcc main.c моя.lib\n"
            "  -l имя        брать функции из этой DLL (user32, gdi32, свою mylib...)\n"
            "  -I папка      где ещё искать #include\n"
            "  -D ИМЯ[=знач] определить макрос\n"
            "  -S            сохранить ассемблерный текст рядом (.s)\n"
+           "  -g            сведения для отладчика WinCC рядом с программой (.wdbg)\n"
+           "  -O0           без оптимизации переменных: все в памяти (для отладки)\n"
            "  --stack МБ    размер стека (по умолчанию 8)\n"
            "  --run         собрать и сразу запустить\n", WCC_VERSION);
 }
@@ -277,6 +280,66 @@ static const char *dll_of(const char *name, int len)
     return winlink_dll_of(name, len);
 }
 
+// ---- the programmer's own libraries (wcc --lib, cc.c: cc_build_lib) ----
+
+static int ends_with_ci(const char *s, const char *ext)
+{
+    int n = (int)strlen(s), m = (int)strlen(ext);
+    return n >= m && _stricmp(s + n - m, ext) == 0;
+}
+
+static char *full_path(const char *path)
+{
+    wchar_t buf[MAX_PATH * 2];
+    DWORD n = GetFullPathNameW(wide(path), MAX_PATH * 2, buf, 0);
+    return n && n < MAX_PATH * 2 ? utf8(buf) : (char *)path;
+}
+
+// A .lib named on the command line: its files go into *list (n of them), the names it uses into the
+// #pragma comment(lib) list. 0 and a message: not a WinCC library (one of Visual Studio, say).
+static int read_wcclib(const char *path, CcSource *list, int *n, int cap)
+{
+    int size;
+    const u8 *data = read_binary(path, &size);
+    if (!data) {
+        fprintf(stderr, "wcc: нет файла %s\n", path);
+        return 0;
+    }
+    const char *p = (const char *)data, *end = p + size;
+    if (size < 9 || strncmp(p, "WCCLIB 1\n", 9)) {
+        fprintf(stderr, "wcc: %s — не библиотека WinCC (wcc --lib); библиотеки Visual Studio он не читает\n", path);
+        return 0;
+    }
+    p += 9;
+    while (p < end) {
+        const char *e = p;
+        while (e < end && *e != '\n') e++;
+        if (!strncmp(p, "uses ", 5)) {
+            const char *name = cc_strndup(p + 5, (int)(e - p - 5));
+            int known = 0;
+            for (int i = 0; i < cc_pragma_lib_count; i++)
+                if (!_stricmp(cc_pragma_libs[i], name)) known = 1;
+            if (!known && cc_pragma_lib_count < 64)
+                cc_pragma_libs[cc_pragma_lib_count++] = name;
+            p = e + 1;
+        } else if (!strncmp(p, "source ", 7)) {
+            char *q;
+            long bytes = strtol(p + 7, &q, 10);
+            const char *name = cc_strndup(q + 1, (int)(e - q - 1));
+            const char *text = e + 1;
+            if (bytes < 0 || text + bytes > end || *n >= cap) {
+                fprintf(stderr, "wcc: %s испорчен\n", path);
+                return 0;
+            }
+            list[*n].name = name;
+            list[(*n)++].text = cc_strndup(text, (int)bytes);
+            p = text + bytes;
+        } else
+            p = e + 1;
+    }
+    return 1;
+}
+
 static int run_program(const char *exe)
 {
     // the full path: with NoDefaultCurrentDirectoryInExePath set, Windows would not look in "."
@@ -306,6 +369,9 @@ int wmain(int argc, wchar_t **wargv)
         argv[i] = utf8(wargv[i]);
 
     static CcSource src[512];
+    static CcSource libsrc[512];       // the files of the .lib files named: library units, after the program's own
+    static const char *libfiles[64];
+    int nlibsrc = 0, nlibfile = 0, make_lib = 0;
     int nsrc = 0, dll = 0, subsystem = 0, show_asm = 0, run = 0;
     u64 stack = 0;
     const char *out = 0;
@@ -320,7 +386,11 @@ int wmain(int argc, wchar_t **wargv)
         else if (!strcmp(a, "--gui")) subsystem = 2;
         else if (!strcmp(a, "--console")) subsystem = 3;
         else if (!strcmp(a, "--dll")) dll = 1;
+        else if (!strcmp(a, "--lib")) make_lib = 1;
         else if (!strcmp(a, "-S")) show_asm = 1;
+        else if (!strcmp(a, "-g")) cc_debug_info = 1;
+        else if (!strcmp(a, "-O0")) cc_no_regalloc = 1;
+        else if (!strcmp(a, "-O") || !strcmp(a, "-O1") || !strcmp(a, "-O2")) cc_no_regalloc = 0;
         else if (!strcmp(a, "--run")) run = 1;
         else if (!strcmp(a, "--stack") && next) { stack = (u64)atoi(next) << 20; i++; }
         else if (!strncmp(a, "-l", 2)) { const char *l = a[2] ? a + 2 : next; if (!a[2]) i++; if (l && nlib < 128) libs[nlib++] = l; }
@@ -335,17 +405,22 @@ int wmain(int argc, wchar_t **wargv)
             }
         }
         else if (a[0] == '-') { fprintf(stderr, "wcc: неизвестный параметр %s (wcc --help)\n", a); return 2; }
+        else if (ends_with_ci(a, ".lib")) {
+            if (nlibfile < 64) libfiles[nlibfile++] = a;     // read after the options: -o may come later
+        }
         else {
             if (nsrc >= 500) { fprintf(stderr, "wcc: слишком много файлов\n"); return 2; }
             const char *text = read_text(a);
             if (!text) { fprintf(stderr, "wcc: нет файла %s\n", a); return 2; }
-            src[nsrc].name = a;
+            src[nsrc].name = make_lib ? full_path(a) : a;    // a library keeps full paths: the debugger finds them later
             src[nsrc++].text = text;
         }
     }
     if (!nsrc) { usage(); return 2; }
     if (!out)
-        out = with_ext(src[0].name, dll ? ".dll" : ".exe");
+        out = with_ext(src[0].name, make_lib ? ".lib" : dll ? ".dll" : ".exe");
+    for (int i = 0; i < nlibfile; i++)
+        if (!read_wcclib(libfiles[i], libsrc, &nlibsrc, 512)) return 2;
 
     // WinCC's own folders: include\ and runtime\ next to wcc.exe (or one level up while it is being built)
     char *home = exe_dir();
@@ -363,7 +438,10 @@ int wmain(int argc, wchar_t **wargv)
     cc_read_binary = read_binary;
 
     // the library: compiled into every program after the program's own sources
+    // (first the programmer's own .lib files, then WinCC's runtime): what nobody calls stays out
     int first_lib = nsrc;
+    for (int i = 0; i < nlibsrc && nsrc < 500; i++)
+        src[nsrc++] = libsrc[i];
     static const char *rt_files[] = { "runtime.c", "winhost.c", "start.c", "wingdi.c", "winfile.c", "winthread.c",
                                       "winlocale.c", "conio.c", "cmath.c", "rtasm.asm" };
     for (int i = 0; i < (int)(sizeof(rt_files) / sizeof(rt_files[0])); i++) {
@@ -382,6 +460,22 @@ int wmain(int argc, wchar_t **wargv)
                                       "comctl32", "ole32", "winmm", "ws2_32", "version", 0 };
 
     cc_target_win = 1;
+    if (make_lib) {
+        // the library is the program's own sources only; the runtime and other .lib files join each program that takes it
+        char *lib_text;
+        DWORD l0 = GetTickCount();
+        if (!cc_build_lib(src, first_lib, &lib_text)) {
+            fprintf(stderr, "%s\n", cc_last_error);
+            return 1;
+        }
+        if (!write_file(out, lib_text, strlen(lib_text))) {
+            fprintf(stderr, "wcc: не записать %s\n", out);
+            return 1;
+        }
+        printf("Готово: %s — библиотека WinCC, файлов %d, %llu байт, %lu мс\n", out, first_lib,
+               (unsigned long long)strlen(lib_text), GetTickCount() - l0);
+        return 0;
+    }
     CcWinTarget t = { 0 };
     t.exe = !dll;
     t.subsystem = dll ? 3 : subsystem;
@@ -414,6 +508,12 @@ int wmain(int argc, wchar_t **wargv)
         fprintf(stderr, "wcc: не записать %s (программа ещё запущена?)\n", out);
         return 1;
     }
+    // -g: the debugger's file next to the program; without -g an old one would lie about the new code
+    const char *wdbg = with_ext(out, ".wdbg");
+    if (cc_debug_info && cc_win_debug_text)
+        write_file(wdbg, cc_win_debug_text, strlen(cc_win_debug_text));
+    else
+        DeleteFileW(wide(wdbg));
     printf("Готово: %s — %s, %llu байт, %lu мс\n", out,
            dll ? "библиотека DLL" : t.subsystem == 2 ? "оконная программа" : "консольная программа",
            (unsigned long long)size, GetTickCount() - t0);

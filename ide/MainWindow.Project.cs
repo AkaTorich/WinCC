@@ -62,6 +62,7 @@ namespace WinCC
             syncingKind = true;
             KindBox.SelectedIndex = Array.IndexOf(ProgramKinds.All, project != null ? project.Kind : settings.Kind);
             syncingKind = false;
+            SyncConfigBox();
             UpdateStatus();
         }
 
@@ -154,11 +155,16 @@ namespace WinCC
         /// пустая папка — main.c с заготовкой.</summary>
         void NewProject()
         {
+            // сначала вид: программа консоли, окно (WinMain), DLL или своя библиотека — от него заготовка
+            var kindDlg = new NewProjectDialog(this, CurrentKind);
+            if (kindDlg.ShowDialog() != true) return;
+            ProgramKind kind = kindDlg.Kind;
+
             var dlg = new SaveFileDialog
             {
                 Filter = Loc.T("FilterProject"),
                 Title = Loc.T("NewProjectTitle"),
-                FileName = Loc.T("NewProjectName"),
+                FileName = Loc.T(Templates.IsLibraryKind(kind) ? "NewLibraryName" : "NewProjectName"),
                 DefaultExt = Project.Extension,
                 AddExtension = true
             };
@@ -166,7 +172,7 @@ namespace WinCC
             if (folder != null) dlg.InitialDirectory = folder;
             if (dlg.ShowDialog(this) != true) return;
 
-            var p = new Project(dlg.FileName) { Kind = CurrentKind };
+            var p = new Project(dlg.FileName) { Kind = kind };
             // файлы Си из папки проекта и её вложенных папок (порядок ScanFolder: свои, потом вложенные; заголовки — после)
             var found = Project.ScanFolder(p.Folder)
                 .Where(f => (Project.IsBuildFile(f) || Project.IsHeader(f)) && !f.EndsWith(".res", StringComparison.OrdinalIgnoreCase))
@@ -180,10 +186,19 @@ namespace WinCC
                         Loc.T("NewProjectTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (answer == MessageBoxResult.Yes) foreach (string f in found) p.Add(f);
                 }
+                else if (Templates.IsLibraryKind(kind))
+                {
+                    // библиотека: имя.c с функциями (у DLL — dllexport и DllMain), имя.h с объявлениями — без main
+                    string c = Path.Combine(p.Folder, p.Name + ".c"), h = Path.Combine(p.Folder, p.Name + ".h");
+                    if (!File.Exists(c)) File.WriteAllText(c, Templates.LibrarySource(kind, p.Name), new UTF8Encoding(false));
+                    if (!File.Exists(h)) File.WriteAllText(h, Templates.Header(kind, p.Name), new UTF8Encoding(false));
+                    p.Add(c);
+                    p.Add(h);
+                }
                 else
                 {
                     string main = Path.Combine(p.Folder, "main.c");
-                    File.WriteAllText(main, NewFileText, new UTF8Encoding(false));
+                    File.WriteAllText(main, kind == ProgramKind.Window ? Templates.WindowProgram : NewFileText, new UTF8Encoding(false));
                     p.Add(main);
                 }
                 p.Save();
@@ -198,7 +213,7 @@ namespace WinCC
         }
 
         /// <summary>Не текст: такой файл проекта открывает программа Windows, а не вкладка редактора.</summary>
-        static readonly string[] binaryExtensions = { ".res", ".ico", ".cur", ".bmp", ".png", ".jpg", ".gif", ".ani", ".bin" };
+        static readonly string[] binaryExtensions = { ".res", ".ico", ".cur", ".bmp", ".png", ".jpg", ".gif", ".ani", ".bin", ".lib" };
 
         void OpenProjectFile(string path)
         {
@@ -290,9 +305,13 @@ namespace WinCC
             {
                 if (!File.Exists(path))
                 {
+                    // в библиотеке — подключение её заголовка, в программе без файлов — main / WinMain, иначе пусто
+                    bool lib = Templates.IsLibraryKind(project.Kind);
                     string text = Project.IsHeader(path) ? "#pragma once\r\n\r\n"
                                 : string.Equals(Path.GetExtension(path), ".rc", StringComparison.OrdinalIgnoreCase) ? NewRcText
-                                : project.BuildFiles.Any() ? "" : NewFileText;
+                                : lib ? (File.Exists(Path.Combine(project.Folder, project.Name + ".h")) ? Templates.LibraryFile(project.Name) : "")
+                                : project.BuildFiles.Any() ? ""
+                                : project.Kind == ProgramKind.Window ? Templates.WindowProgram : NewFileText;
                     File.WriteAllText(path, text, new UTF8Encoding(false));
                 }
             }

@@ -123,12 +123,14 @@ namespace WinCC.Projects
             OutputText.Text = ProgramKinds.Title(project.Kind) + " → " + project.OutputName;
             OutputText.ToolTip = project.OutputPath;
 
-            var sources = project.Files.Where(f => Project.IsBuildFile(f) && !Project.IsResource(f)).ToList();
+            var sources = project.Files.Where(f => Project.IsBuildFile(f) && !Project.IsResource(f) && !Project.IsLibrary(f)).ToList();
             var headers = project.Files.Where(Project.IsHeader).ToList();
             var resources = project.Files.Where(Project.IsResource).ToList();
+            var libraries = project.Files.Where(Project.IsLibrary).ToList();
             var other = project.Files.Where(f => !Project.IsBuildFile(f) && !Project.IsHeader(f)).ToList();
             AddGroup(Loc.T("GroupSources"), IconKind.Code, sources);
             AddGroup(Loc.T("GroupHeaders"), IconKind.FileText, headers);
+            AddGroup(Loc.T("GroupLibraries"), IconKind.Archive, libraries);
             AddGroup(Loc.T("GroupResources"), IconKind.Image, resources);
             AddGroup(Loc.T("GroupOther"), IconKind.File, other);
             NoFilesView.Visibility = project.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -172,7 +174,7 @@ namespace WinCC.Projects
             TreeViewItem node;
             if (folders.TryGetValue(folder, out node)) return node;
             // папка вне проекта (полный путь) — один узел с полным путём, без разбивки
-            bool outside = Path.IsPathRooted(folder);
+            bool outside = Path.IsPathRooted(folder) || folder.StartsWith("..");
             string parent = outside ? "" : FolderOf(folder);
             ItemsControl owner = FolderItem(group, folders, parent);
             string full = project.FullPath(folder);

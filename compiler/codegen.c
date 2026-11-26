@@ -2016,7 +2016,9 @@ static void assign_lvar_offsets(Obj *prog)
 
         drop_casts(fn->body);
         // locals in registers; their saved values sit between rbp and the caller's rbp
-        alloc_regs(fn);
+        // (wcc -O0: none -- every variable stays in memory, as a debugger likes it)
+        if (!cc_no_regalloc)
+            alloc_regs(fn);
         int base = 16 + 8 * (fn->nsave + fn->save_pad);
         // parameters live in the caller-provided home slots at rbp+base+8*i
         int slot = is_big_struct(fn->ty->return_ty) ? 1 : 0;
@@ -2064,6 +2066,131 @@ static int in_library(Obj *o)
     return cc_first_lib_unit && o->tok && o->tok->unit >= cc_first_lib_unit;
 }
 
+// ---- debug info for the WinCC debugger (wcc -g): frames, variables, types ----
+// .dbgframe NSAVE PAD REG...       the registers pushed after rbp (in order) and the 8-byte pad
+// .dbgvar LOC LINE TYPE NAME       a parameter (LINE 0) or local: LOC s-16 (at rbp-16), S-16 (rbp-16 holds
+//                                  its address: a VLA, an over-aligned one), rrbx (in a register)
+// .dbgglobal LABEL FILE LINE TYPE NAME   a global variable (FILE: its .dbgfile number)
+// .dbgstruct ID SIZE s|u / .dbgfield OFF BITOFF BITS TYPE NAME   (all at the end of the text)
+// TYPE: c C (char, unsigned char) b (bool) i2 i4 i8 u2 u4 u8 f4 f8 e4 (enum) v (void)
+//       F (a function) *T (pointer) [N]T (array) sID (struct or union, by its .dbgstruct)
+// Every function gets them, the library's too (a .lib of the programmer's own is a library as well);
+// the debugger tells the program's files from WinCC's runtime\ and lib\ by their folders.
+int cc_debug_info, cc_no_regalloc;
+static Type **g_dbg_structs;
+static int g_dbg_nstructs, g_dbg_capstructs;
+
+static int dbg_struct_id(Type *ty)
+{
+    while (ty->origin)
+        ty = ty->origin;
+    for (int i = 0; i < g_dbg_nstructs; i++)
+        if (g_dbg_structs[i] == ty)
+            return i;
+    if (g_dbg_nstructs == g_dbg_capstructs) {
+        int cap = g_dbg_capstructs ? g_dbg_capstructs * 2 : 64;
+        Type **nb = cc_alloc(sizeof(Type *) * (size_t)cap);
+        for (int i = 0; i < g_dbg_nstructs; i++)
+            nb[i] = g_dbg_structs[i];
+        g_dbg_structs = nb;
+        g_dbg_capstructs = cap;
+    }
+    g_dbg_structs[g_dbg_nstructs] = ty;
+    return g_dbg_nstructs++;
+}
+
+static int dbg_type(char *b, int n, int cap, Type *ty)
+{
+    if (!ty || n > cap - 24) {
+        if (n < cap - 1)
+            b[n++] = '?';
+        b[n] = 0;
+        return n;
+    }
+    switch (ty->kind) {
+    case TY_VOID: b[n++] = 'v'; break;
+    case TY_BOOL: b[n++] = 'b'; break;
+    case TY_CHAR: b[n++] = ty->is_unsigned ? 'C' : 'c'; break;
+    case TY_SHORT: case TY_INT: case TY_LONG:
+        n += fmt(b + n, cap - n, "%s%d", ty->is_unsigned ? "u" : "i", ty->size);
+        break;
+    case TY_ENUM: n += fmt(b + n, cap - n, "e%d", ty->size); break;
+    case TY_FLOAT: case TY_DOUBLE: n += fmt(b + n, cap - n, "f%d", ty->size); break;
+    case TY_PTR: case TY_VLA:
+        b[n++] = '*';
+        n = dbg_type(b, n, cap, ty->base);
+        break;
+    case TY_ARRAY:
+        n += fmt(b + n, cap - n, "[%d]", ty->array_len);
+        n = dbg_type(b, n, cap, ty->base);
+        break;
+    case TY_STRUCT: case TY_UNION: n += fmt(b + n, cap - n, "s%d", dbg_struct_id(ty)); break;
+    case TY_FUNC: b[n++] = 'F'; break;
+    default: b[n++] = '?'; break;
+    }
+    b[n] = 0;
+    return n;
+}
+
+// a C name the program wrote (not the compiler's own __va_area__, compound literals...)
+static int dbg_name_ok(const char *s)
+{
+    if (!s || !s[0] || (s[0] == '_' && s[1] == '_') || (s[0] >= '0' && s[0] <= '9'))
+        return 0;
+    for (; *s; s++)
+        if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9') || *s == '_' || (u8)*s >= 0x80))
+            return 0;
+    return 1;
+}
+
+static void dbg_function(Obj *fn)
+{
+    char list[64];
+    int n = 0;
+    list[0] = 0;
+    for (int i = 0; i < fn->nsave; i++)
+        n += fmt(list + n, (int)sizeof(list) - n, " %s", g_reg64[fn->save[i]]);
+    println(".dbgframe %d %d%s", fn->nsave, fn->save_pad, list);
+    // the parameters (their own list), then the locals
+    for (int pass = 0; pass < 2; pass++)
+    for (Obj *v = pass ? fn->locals : fn->params; v; v = v->next) {
+        if ((pass && !v->tok) || v == fn->va_area || !dbg_name_ok(v->name))      // a parameter has no token
+            continue;
+        if (pass) {
+            int param = 0;
+            for (Obj *q = fn->params; q && !param; q = q->next)
+                param = q == v;
+            if (param)
+                continue;
+        }
+        char ty[256];
+        dbg_type(ty, 0, (int)sizeof(ty), v->ty);
+        char loc[24];
+        if (v->reg)
+            fmt(loc, (int)sizeof(loc), "r%s", g_reg64[v->reg]);
+        else
+            fmt(loc, (int)sizeof(loc), "%s%d", v->indirect ? "S" : "s", v->offset);
+        println(".dbgvar %s %d %s %s", loc, pass ? v->tok->line : 0, ty, v->name);     // line 0: a parameter
+    }
+}
+
+static void dbg_structs(void)
+{
+    if (!g_dbg_nstructs)
+        return;
+    println(".text");
+    for (int i = 0; i < g_dbg_nstructs; i++) {      // the list grows while it goes: members name more
+        Type *ty = g_dbg_structs[i];
+        println(".dbgstruct %d %d %s", i, ty->size, ty->kind == TY_UNION ? "u" : "s");
+        for (Member *m = ty->members; m; m = m->next) {
+            char t[256];
+            dbg_type(t, 0, (int)sizeof(t), m->ty);
+            println(".dbgfield %d %d %d %s %s", m->offset, m->is_bitfield ? m->bit_offset : 0,
+                    m->is_bitfield ? m->bit_width : 0, t, m->name ? cc_strndup(m->name->loc, m->name->len) : "-");
+        }
+    }
+}
+
 static void emit_data(Obj *prog)
 {
     println(".data");
@@ -2086,6 +2213,14 @@ static void emit_data(Obj *prog)
             println(".gc");
         println(".align %d", align);
         println("%s:", var->name);
+        if (cc_debug_info && var->tok && var->name[0] != '.' && !var->is_tls) {
+            int file = dbg_file(var->tok->file);
+            if (file >= 0) {
+                char ty[256];
+                dbg_type(ty, 0, (int)sizeof(ty), var->ty);
+                println(".dbgglobal %s %d %d %s %s", var->name, file, var->tok->line, ty, cc_strndup(var->tok->loc, var->tok->len));
+            }
+        }
         int size = var->ty->size > 0 ? var->ty->size : 0;
         if (!var->init_data) {
             if (size)
@@ -2182,7 +2317,13 @@ static void emit_text(Obj *prog)
         g_nfunclets = 0;
         g_any_seh |= fn->has_seh;
         println(".dbgfunc %s", fn->tok ? cc_strndup(fn->tok->loc, fn->tok->len) : fn->name);   // the C name (a static's label may be "name.2")
-        dbg_loc(fn->body->lbrace ? fn->body->lbrace : fn->tok);
+        Token *open = fn->body->lbrace ? fn->body->lbrace : fn->tok;
+        if (cc_debug_info)
+            dbg_function(fn);
+        // wcc -g: "{" is where the frame is made and the parameters are in place (below), so a
+        // debugger stopped on it sees them; otherwise it is the function's first byte
+        if (!cc_debug_info || fn->is_naked)
+            dbg_loc(open);
         if (fn->is_naked) {
             // __declspec(naked): only the asm of the body; it returns by itself (ret)
             g_depth = 0;
@@ -2257,6 +2398,8 @@ static void emit_text(Obj *prog)
                 store_at(q->ty, r);
             }
 
+        if (cc_debug_info)
+            dbg_loc(open);
         gen_stmt(fn->body);
         if (g_depth != 0)
             cc_error_tok(fn->tok, "внутренняя ошибка: стек не сошёлся (%d)", g_depth);
@@ -2296,6 +2439,7 @@ char *cc_codegen_text(Obj *prog)
     g_dbg_last = 0;
     g_fn = 0;
     g_any_seh = 0;
+    g_dbg_nstructs = 0;
     // the parser lists globals newest first; emit in source order
     Obj *rev = 0;
     for (Obj *o = prog; o;) {
@@ -2307,6 +2451,8 @@ char *cc_codegen_text(Obj *prog)
     assign_lvar_offsets(rev);
     emit_data(rev);
     emit_text(rev);
+    if (cc_debug_info)
+        dbg_structs();
     if (cc_file_asm) {
         println(".text");
         out_raw(cc_file_asm, cc_strlen(cc_file_asm));

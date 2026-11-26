@@ -116,6 +116,11 @@ static void keep_name(Piece *pc, int *stack, int *sp, const char *s, int n, int 
 static void scan_line(const Line *l, Piece *pc, int *stack, int *sp)
 {
     const char *p = l->s, *e = l->s + l->len;
+    while (p < e && (*p == ' ' || *p == '\t'))
+        p++;
+    if (e - p > 4 && p[0] == '.' && p[1] == 'd' && p[2] == 'b' && p[3] == 'g')
+        return;                 // .dbgvar & co (wcc -g): a variable's name is not a use of a function
+    p = l->s;
     while (p < e) {
         if (*p == ';' || (*p == '/' && p + 1 < e && p[1] == '/'))
             return;             // a comment
@@ -191,6 +196,10 @@ char *cc_strip_unused(const char *text)
                 nm->tlen = (int)(te - t);
             }
             piece_of[i] = -2;                       // not scanned for names
+            continue;
+        }
+        if (is_word(&ln[i], ".dbgfile")) {
+            piece_of[i] = -2;           // a file's number stays even if the function that named it first goes
             continue;
         }
         int starter = is_word(&ln[i], ".gc") || is_word(&ln[i], ".local") || is_word(&ln[i], ".export") ||

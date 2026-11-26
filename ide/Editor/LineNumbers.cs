@@ -30,7 +30,34 @@ namespace WinCC.Editor
             if (Editor == null) return new Size(0, 0);
             int digits = Math.Max(3, Editor.LineCount.ToString(CultureInfo.InvariantCulture).Length);
             double w = Number(new string('8', digits), SyntaxColors.Dim).WidthIncludingTrailingWhitespace;
-            return new Size(Math.Ceiling(w + 22), 0);
+            return new Size(Math.Ceiling(w + 22 + MarkWidth), 0);
+        }
+
+        /// <summary>Поле слева от номеров: кружки точек останова и стрелка строки, где стоит программа.</summary>
+        const double MarkWidth = 16;
+
+        protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+        {
+            base.OnMouseLeftButtonDown(e);
+            if (Editor == null) return;
+            int line = LineAtY(e.GetPosition(this).Y);
+            if (line >= 0) { Editor.ToggleBreakpoint(line + 1); e.Handled = true; }
+        }
+
+        int LineAtY(double y)
+        {
+            TextBox box = Editor.TextBox;
+            int first = box.GetFirstVisibleLineIndex(), last = box.GetLastVisibleLineIndex();
+            if (first < 0) return -1;
+            last = Math.Min(last + 1, Editor.LineCount - 1);
+            for (int line = first; line <= last; line++)
+            {
+                Rect at = box.GetRectFromCharacterIndex(Editor.LineStart(line));
+                if (at.IsEmpty) continue;
+                double top = box.TranslatePoint(at.TopLeft, this).Y;
+                if (y >= top && y < top + at.Height) return line;
+            }
+            return -1;
         }
 
         protected override void OnRender(DrawingContext dc)
@@ -62,6 +89,23 @@ namespace WinCC.Editor
                             : line == Editor.CaretLineIndex ? SyntaxColors.Accent : SyntaxColors.Dim;
                 var ft = Number((line + 1).ToString(CultureInfo.InvariantCulture), brush);
                 dc.DrawText(ft, new Point(ActualWidth - 12 - ft.Width, y + (at.Height - ft.Height) / 2));
+                double cy = y + at.Height / 2, r = Math.Min(5.5, at.Height * 0.32);
+                if (Editor.IsBreakpointLine(line))
+                    dc.DrawEllipse(SyntaxColors.Breakpoint, null, new Point(9, cy), r, r);
+                if (line == Editor.ExecLineIndex)
+                {
+                    var arrow = new StreamGeometry();
+                    using (var g = arrow.Open())
+                    {
+                        g.BeginFigure(new Point(3, cy - r), true, true);
+                        g.LineTo(new Point(9, cy - r), true, false);
+                        g.LineTo(new Point(15, cy), true, false);
+                        g.LineTo(new Point(9, cy + r), true, false);
+                        g.LineTo(new Point(3, cy + r), true, false);
+                    }
+                    arrow.Freeze();
+                    dc.DrawGeometry(SyntaxColors.ExecArrow, new Pen(Brushes.Black, 0.6), arrow);
+                }
             }
             dc.Pop();
         }

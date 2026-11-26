@@ -48,6 +48,7 @@ namespace WinCC.Projects
             AddRow(grid, Loc.T("Macros"), definesBox, "DEBUG; VERSION=2");
             AddRow(grid, Loc.T("IncludeFolders"), includesBox);
             AddRow(grid, Loc.T("Dlls"), libsBox, "dwmapi; mylib");
+            libsBox.ToolTip = Loc.T("LibrariesHint");
             AddRow(grid, Loc.T("StackMb"), stackBox, Loc.T("StackDefault"));
             AddRow(grid, Loc.T("OtherArgs"), optionsBox, "-S");
             Content = grid;

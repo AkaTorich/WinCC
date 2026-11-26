@@ -126,12 +126,31 @@
                         <Button x:Name="BuildButton" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource S.BuildTip}">
                             <StackPanel Orientation="Horizontal"><tl:Icon Kind="Wrench" Style="{StaticResource ButtonIcon}"/><TextBlock Text="{DynamicResource S.Build}"/></StackPanel>
                         </Button>
-                        <Button x:Name="RunButton" Style="{DynamicResource Theme.AccentButton}" Margin="0,0,6,0" Padding="12,6" ToolTip="{DynamicResource S.RunTip}">
-                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="Play" Style="{StaticResource ButtonIcon}"/><TextBlock Text="{DynamicResource S.Run}"/></StackPanel>
+                        <Button x:Name="RunButton" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource S.RunTip}">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="SkipForward" Style="{StaticResource ButtonIcon}"/><TextBlock Text="{DynamicResource S.Run}"/></StackPanel>
                         </Button>
+                        <Button x:Name="DebugButton" Style="{DynamicResource Theme.AccentButton}" Margin="0,0,6,0" Padding="12,6" ToolTip="{DynamicResource S.DebugTip}">
+                            <StackPanel Orientation="Horizontal"><tl:Icon Kind="Play" Style="{StaticResource ButtonIcon}"/><TextBlock x:Name="DebugText" Text="{DynamicResource S.Debug}"/></StackPanel>
+                        </Button>
+                        <!-- Шаги отладки: видны, пока программа под отладчиком -->
+                        <StackPanel x:Name="DebugBar" Orientation="Horizontal" Visibility="Collapsed">
+                            <Button x:Name="StopButton" Style="{StaticResource ToolButton}" Padding="9,6" ToolTip="{DynamicResource S.StopTip}">
+                                <tl:Icon Kind="Stop" Width="16" Height="16" VerticalAlignment="Center"/>
+                            </Button>
+                            <Button x:Name="StepOverButton" Style="{StaticResource ToolButton}" Padding="9,6" ToolTip="{DynamicResource S.StepOverTip}">
+                                <tl:Icon Kind="ArrowRight" Width="16" Height="16" VerticalAlignment="Center"/>
+                            </Button>
+                            <Button x:Name="StepIntoButton" Style="{StaticResource ToolButton}" Padding="9,6" ToolTip="{DynamicResource S.StepIntoTip}">
+                                <tl:Icon Kind="ArrowDown" Width="16" Height="16" VerticalAlignment="Center"/>
+                            </Button>
+                            <Button x:Name="StepOutButton" Style="{StaticResource ToolButton}" Padding="9,6" ToolTip="{DynamicResource S.StepOutTip}">
+                                <tl:Icon Kind="ArrowUp" Width="16" Height="16" VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
                         <Rectangle Width="1" Margin="6,4,12,4" Fill="{DynamicResource Theme.TextDim}" Opacity="0.35"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <ComboBox x:Name="ConfigBox" Width="104" VerticalAlignment="Center" Margin="0,0,12,0" ToolTip="{DynamicResource S.ConfigTip}"/>
                         <TextBlock Text="{DynamicResource S.KindLabel}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource Theme.TextDim}"/>
                         <ComboBox x:Name="KindBox" Width="130" VerticalAlignment="Center" ToolTip="{DynamicResource S.KindTip}"/>
                     </StackPanel>
@@ -223,6 +242,43 @@
                                 <TextBlock x:Name="NoErrorsText" Text="{DynamicResource S.NoErrors}" Foreground="{DynamicResource Theme.TextDim}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
                             </Grid>
+                        </TabItem>
+                        <TabItem x:Name="VarsTab">
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal"><tl:Icon Kind="List" Width="12" Height="12" Margin="0,0,5,0" VerticalAlignment="Center"/><TextBlock Text="{DynamicResource S.Variables}"/></StackPanel>
+                            </TabItem.Header>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <Grid Margin="28,4,0,4" TextElement.Foreground="{DynamicResource Theme.TextDim}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="460"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{DynamicResource S.ColName}"/>
+                                    <TextBlock Grid.Column="1" Text="{DynamicResource S.ColValue}"/>
+                                    <TextBlock Grid.Column="2" Text="{DynamicResource S.ColType}"/>
+                                </Grid>
+                                <TreeView x:Name="VarTree" Grid.Row="1" BorderThickness="0" FontFamily="{DynamicResource Theme.Font.Mono}" FontSize="13"/>
+                                <TextBlock x:Name="NoVarsText" Grid.Row="1" Text="{DynamicResource S.NoVariables}" Foreground="{DynamicResource Theme.TextDim}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                            </Grid>
+                        </TabItem>
+                        <TabItem x:Name="StackTab">
+                            <TabItem.Header>
+                                <StackPanel Orientation="Horizontal"><tl:Icon Kind="Layers" Width="12" Height="12" Margin="0,0,5,0" VerticalAlignment="Center"/><TextBlock Text="{DynamicResource S.CallStack}"/></StackPanel>
+                            </TabItem.Header>
+                            <ListView x:Name="StackList" BorderThickness="0">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="{DynamicResource S.ColFunction}" Width="260" DisplayMemberBinding="{Binding Function}"/>
+                                        <GridViewColumn Header="{DynamicResource S.ColPlace}" Width="560" DisplayMemberBinding="{Binding Place}"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
                         </TabItem>
                     </TabControl>
                 </Border>

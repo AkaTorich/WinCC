@@ -26,10 +26,17 @@ namespace WinCC.Projects
         public const string Extension = ".wccproj";
 
         /// <summary>Файлы, которые wcc собирает в программу (код и ресурсы); остальные (заголовки, картинки) — только в списке.</summary>
-        static readonly string[] buildExtensions = { ".c", ".asm", ".rc", ".res" };
+        static readonly string[] buildExtensions = { ".c", ".asm", ".rc", ".res", ".lib" };
+
+        /// <summary>Своя библиотека WinCC (wcc --lib): программа проекта берёт из неё нужные функции.</summary>
+        public static bool IsLibrary(string file)
+        {
+            return string.Equals(System.IO.Path.GetExtension(file), ".lib", StringComparison.OrdinalIgnoreCase);
+        }
 
         public string Path { get; private set; }
         public ProgramKind Kind = ProgramKind.Console;
+        public BuildConfig Config = BuildConfig.Debug;
         public string Output = "";
         public readonly List<string> Files = new List<string>();
         public readonly List<string> Defines = new List<string>();
@@ -183,6 +190,7 @@ namespace WinCC.Projects
                 switch (key)
                 {
                     case "kind": p.Kind = ProgramKinds.Parse(value); break;
+                    case "config": p.Config = BuildConfigs.Parse(value); break;
                     case "output": p.Output = value; break;
                     case "file": if (value.Length > 0) p.Files.Add(value); break;
                     case "define": if (value.Length > 0) p.Defines.Add(value); break;
@@ -203,6 +211,7 @@ namespace WinCC.Projects
             var sb = new StringBuilder();
             sb.AppendLine("# WinCC project");
             sb.AppendLine("kind=" + Kind);
+            sb.AppendLine("config=" + Config);
             if (!string.IsNullOrWhiteSpace(Output)) sb.AppendLine("output=" + Output.Trim());
             foreach (string f in Files) sb.AppendLine("file=" + f);
             foreach (string d in Defines) sb.AppendLine("define=" + d);

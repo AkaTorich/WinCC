@@ -21,6 +21,8 @@ namespace WinCC.Editor
         readonly List<int> lineStates = new List<int> { 0 };
         readonly HashSet<int> errorLines = new HashSet<int>();
         readonly HashSet<int> warningLines = new HashSet<int>();
+        readonly SortedSet<int> breakpoints = new SortedSet<int>();     // строки с нуля
+        int execLine = -1;
         ScrollViewer scrollHost;
         int caretLine = -1;
         bool redrawPending;
@@ -29,6 +31,8 @@ namespace WinCC.Editor
         public event EventHandler TextEdited;
         /// <summary>Каретка перешла на другое место.</summary>
         public event EventHandler CaretMoved;
+        /// <summary>Точки останова поставлены, сняты или сдвинулись с правкой текста.</summary>
+        public event EventHandler BreakpointsChanged;
 
         public CodeEditor()
         {
@@ -57,6 +61,90 @@ namespace WinCC.Editor
         internal int CaretLineIndex { get { return caretLine; } }
         internal bool IsErrorLine(int line) { return errorLines.Contains(line); }
         internal bool IsWarningLine(int line) { return warningLines.Contains(line); }
+        internal bool IsBreakpointLine(int line) { return breakpoints.Contains(line); }
+        internal int ExecLineIndex { get { return execLine; } }
+
+        /// <summary>Строки с точками останова, с единицы.</summary>
+        public IEnumerable<int> Breakpoints { get { foreach (int l in breakpoints) yield return l + 1; } }
+
+        public void SetBreakpoints(IEnumerable<int> lines)
+        {
+            breakpoints.Clear();
+            if (lines != null) foreach (int l in lines) if (l >= 1) breakpoints.Add(l - 1);
+            Redraw();
+        }
+
+        public void ToggleBreakpoint(int line)
+        {
+            if (line < 1 || line > lineStarts.Count) return;
+            if (!breakpoints.Remove(line - 1)) breakpoints.Add(line - 1);
+            Redraw();
+            BreakpointsChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>Строка (с единицы), где стоит программа под отладкой; 0 — нигде. Строка показывается.</summary>
+        public int ExecutionLine
+        {
+            get { return execLine + 1; }
+            set
+            {
+                execLine = value - 1;
+                if (execLine >= 0 && execLine < lineStarts.Count)
+                {
+                    int first = Math.Max(0, execLine - 5);
+                    Box.ScrollToLine(Math.Min(lineStarts.Count - 1, execLine + 5));
+                    Box.ScrollToLine(first);
+                }
+                RequestRedraw();
+            }
+        }
+
+        /// <summary>Только чтение (пока идёт отладка).</summary>
+        public bool ReadOnly { get { return Box.IsReadOnly; } set { Box.IsReadOnly = value; } }
+
+        /// <summary>Строка с каретки, с единицы.</summary>
+        public int CaretLine { get { return Math.Max(caretLine, 0) + 1; } }
+
+        /// <summary>Слово (имя Си) под точкой в координатах редактора — для подсказки со значением.</summary>
+        public string WordAt(Point p)
+        {
+            int i = Box.GetCharacterIndexFromPoint(TranslatePoint(p, Box), false);
+            if (i < 0 || i >= text.Length) return null;
+            Func<char, bool> id = c => char.IsLetterOrDigit(c) || c == '_';
+            if (!id(text[i])) return null;
+            int s = i, e = i;
+            while (s > 0 && id(text[s - 1])) s--;
+            while (e < text.Length && id(text[e])) e++;
+            return text.Substring(s, e - s);
+        }
+
+        // точки останова едут вместе с текстом: строки добавлены или убраны выше них
+        void ShiftBreakpoints(TextChangedEventArgs e, string oldText, List<int> oldStarts)
+        {
+            if (breakpoints.Count == 0 || e.Changes.Count != 1) return;
+            TextChange ch = System.Linq.Enumerable.First(e.Changes);
+            int removed = 0, added = 0;
+            for (int i = ch.Offset; i < ch.Offset + ch.RemovedLength && i < oldText.Length; i++) if (oldText[i] == '\n') removed++;
+            string now = Box.Text;
+            for (int i = ch.Offset; i < ch.Offset + ch.AddedLength && i < now.Length; i++) if (now[i] == '\n') added++;
+            int delta = added - removed;
+            if (delta == 0) return;
+            int lo = 0, hi = oldStarts.Count - 1;
+            while (lo < hi) { int mid = (lo + hi + 1) / 2; if (oldStarts[mid] <= ch.Offset) lo = mid; else hi = mid - 1; }
+            int at = lo;
+            // точка на строке, где правка началась, остаётся, если правка — не в самом её начале
+            bool atLineStart = ch.Offset == oldStarts[at];
+            var moved = new List<int>();
+            foreach (int l in breakpoints)
+            {
+                if (l < at || (l == at && !atLineStart)) moved.Add(l);
+                else if (delta < 0 && l <= at - delta) moved.Add(at);      // строка ушла: точка — на место правки
+                else moved.Add(l + delta);
+            }
+            breakpoints.Clear();
+            foreach (int l in moved) if (l >= 0) breakpoints.Add(l);
+            BreakpointsChanged?.Invoke(this, EventArgs.Empty);
+        }
 
         /// <summary>Конец строки без знаков перевода.</summary>
         internal int LineEnd(int line)
@@ -138,7 +226,10 @@ namespace WinCC.Editor
 
         void OnTextChanged(object sender, TextChangedEventArgs e)
         {
+            string oldText = text;
+            var oldStarts = new List<int>(lineStarts);
             Reparse();
+            ShiftBreakpoints(e, oldText, oldStarts);
             errorLines.Clear();
             warningLines.Clear();
             RequestRedraw();

@@ -23,6 +23,11 @@ namespace WinCC.Editor
         public static Brush Dim { get; private set; }
         public static Brush Accent { get; private set; }
         public static Brush Danger { get; private set; }
+        /// <summary>Отладка: кружок точки останова и фон её строки, стрелка и фон строки, где стоит программа.</summary>
+        public static Brush Breakpoint { get; private set; }
+        public static Brush BreakpointLine { get; private set; }
+        public static Brush ExecArrow { get; private set; }
+        public static Brush ExecLine { get; private set; }
 
         /// <summary>Вызывается после смены темы — редакторы перерисовываются.</summary>
         public static event EventHandler Changed;
@@ -64,6 +69,11 @@ namespace WinCC.Editor
             ErrorLine = Make(Color.FromArgb(52, danger.R, danger.G, danger.B));
             WarningLine = Make(Color.FromArgb(40, warning.R, warning.G, warning.B));
             Warning = Make(warning);
+            Color red = Color.FromRgb(0xE8, 0x2A, 0x3C), exec = Color.FromRgb(0xFF, 0xD2, 0x1F);
+            Breakpoint = Make(red);
+            BreakpointLine = Make(Color.FromArgb(56, red.R, red.G, red.B));
+            ExecArrow = Make(exec);
+            ExecLine = Make(Color.FromArgb(70, exec.R, exec.G, exec.B));
         }
 
         static Color Get(string key, Color fallback)
