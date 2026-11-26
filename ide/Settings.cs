@@ -28,6 +28,8 @@ namespace WinCC
         public readonly List<string> Recent = new List<string>();
         public double PanelWidth = 250;
         public bool PanelShown = true;
+        /// <summary>Подсказки ввода открываются сами после стольких букв имени; 0 — только по Ctrl+Пробел.</summary>
+        public int HintLetters = 2;
 
         static string FilePath
         {
@@ -58,6 +60,7 @@ namespace WinCC
                         case "project": s.Project = value.Length > 0 ? value : null; break;
                         case "recent": if (value.Length > 0) s.Recent.Add(value); break;
                         case "panel": s.PanelShown = value != "0"; break;
+                        case "hints": if (int.TryParse(value, out n)) s.HintLetters = Math.Max(0, Math.Min(4, n)); break;
                         case "panelwidth":
                             if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d))
                                 s.PanelWidth = Math.Max(170, Math.Min(800, d));
@@ -88,6 +91,7 @@ namespace WinCC
                 if (Project != null) sb.AppendLine("project=" + Project);
                 foreach (string r in Recent) sb.AppendLine("recent=" + r);
                 sb.AppendLine("panel=" + (PanelShown ? "1" : "0"));
+                sb.AppendLine("hints=" + HintLetters);
                 sb.AppendLine("panelwidth=" + PanelWidth.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));

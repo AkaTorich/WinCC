@@ -252,6 +252,10 @@ namespace WinCC
             // Настройки
             Add("SettingsTitle", "Settings", "Настройки");
             Add("Language", "Language", "Язык");
+            Add("HintsAfter", "Code hints", "Подсказки ввода");
+            Add("HintsManual", "Ctrl+Space only", "только по Ctrl+Пробел");
+            Add("HintsOne", "after 1 letter", "после 1 буквы");
+            Add("HintsMany", "after {0} letters", "после {0} букв");
         }
     }
 }

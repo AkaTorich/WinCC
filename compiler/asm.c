@@ -3068,7 +3068,7 @@ static void win_bind_imports(Asm *as, Import **imps, int n_imp)
     }
     missing[pos] = 0;
     if (nm)
-        cc_error_at(0, 0, "%s %s%s: %s ни в программе, ни в библиотеках Windows (своя DLL — ключ -l имя или #pragma comment(lib, \"имя\"))",
+        cc_error_at(0, 0, "%s %s%s: %s ни в программе, ни в библиотеках Windows (своя DLL — ключ -l имя или #pragma comment(lib, \"имя\"); своя библиотека — её файл .lib в команде)",
                     nm == 1 ? "функция объявлена, но не написана —" : "функции объявлены, но не написаны —", missing,
                     nm > shown ? " …" : "", nm == 1 ? "её нет" : "их нет");
 }

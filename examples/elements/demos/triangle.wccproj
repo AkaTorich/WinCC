@@ -1,0 +1,4 @@
+# Elements: пример triangle.c
+kind=Window
+config=Debug
+file=triangle.c

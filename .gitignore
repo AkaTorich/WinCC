@@ -17,5 +17,6 @@ setup/payload.zip
 tools/themes-export/bin/
 tools/themes-export/obj/
 docs/руководство/*.pdf
+docs/руководство/*.chm
 docs/руководство/книга.html
 docs/руководство/__pycache__/

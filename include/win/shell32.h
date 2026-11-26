@@ -81,6 +81,69 @@ LPWSTR *CommandLineToArgvW(LPCWSTR cmd, int *argc);
 HICON ExtractIconA(HINSTANCE inst, LPCSTR file, UINT index);
 HICON ExtractIconW(HINSTANCE inst, LPCWSTR file, UINT index);
 
+// shlobj.h: choosing a folder (SHBrowseForFolder) and the item ids of the shell
+#define BIF_RETURNONLYFSDIRS 0x00000001
+#define BIF_DONTGOBELOWDOMAIN 0x00000002
+#define BIF_STATUSTEXT 0x00000004
+#define BIF_RETURNFSANCESTORS 0x00000008
+#define BIF_EDITBOX 0x00000010
+#define BIF_VALIDATE 0x00000020
+#define BIF_NEWDIALOGSTYLE 0x00000040
+#define BIF_USENEWUI (BIF_NEWDIALOGSTYLE | BIF_EDITBOX)
+#define BIF_BROWSEINCLUDEURLS 0x00000080
+#define BIF_UAHINT 0x00000100
+#define BIF_NONEWFOLDERBUTTON 0x00000200
+#define BIF_NOTRANSLATETARGETS 0x00000400
+#define BIF_BROWSEFORCOMPUTER 0x00001000
+#define BIF_BROWSEFORPRINTER 0x00002000
+#define BIF_BROWSEINCLUDEFILES 0x00004000
+#define BIF_SHAREABLE 0x00008000
+#define BFFM_INITIALIZED 1
+#define BFFM_SELCHANGED 2
+#define BFFM_SETSTATUSTEXTA (WM_USER + 100)
+#define BFFM_ENABLEOK (WM_USER + 101)
+#define BFFM_SETSELECTIONA (WM_USER + 102)
+#define BFFM_SETSELECTIONW (WM_USER + 103)
+#define BFFM_SETSTATUSTEXTW (WM_USER + 104)
+
+#pragma pack(push, 1)
+typedef struct _SHITEMID { USHORT cb; BYTE abID[1]; } SHITEMID, *LPSHITEMID;
+typedef struct _ITEMIDLIST { SHITEMID mkid; } ITEMIDLIST, *LPITEMIDLIST;
+#pragma pack(pop)
+typedef const ITEMIDLIST *LPCITEMIDLIST;
+typedef ITEMIDLIST *PIDLIST_ABSOLUTE;
+typedef const ITEMIDLIST *PCIDLIST_ABSOLUTE;
+
+typedef int (CALLBACK *BFFCALLBACK)(HWND hwnd, UINT msg, LPARAM lparam, LPARAM data);
+typedef struct _browseinfoA {
+    HWND hwndOwner; PCIDLIST_ABSOLUTE pidlRoot; LPSTR pszDisplayName; LPCSTR lpszTitle; UINT ulFlags;
+    BFFCALLBACK lpfn; LPARAM lParam; int iImage;
+} BROWSEINFOA, *PBROWSEINFOA, *LPBROWSEINFOA;
+typedef struct _browseinfoW {
+    HWND hwndOwner; PCIDLIST_ABSOLUTE pidlRoot; LPWSTR pszDisplayName; LPCWSTR lpszTitle; UINT ulFlags;
+    BFFCALLBACK lpfn; LPARAM lParam; int iImage;
+} BROWSEINFOW, *PBROWSEINFOW, *LPBROWSEINFOW;
+
+PIDLIST_ABSOLUTE SHBrowseForFolderA(LPBROWSEINFOA bi);
+PIDLIST_ABSOLUTE SHBrowseForFolderW(LPBROWSEINFOW bi);
+BOOL SHGetPathFromIDListA(PCIDLIST_ABSOLUTE pidl, LPSTR path);
+BOOL SHGetPathFromIDListW(PCIDLIST_ABSOLUTE pidl, LPWSTR path);
+BOOL SHGetSpecialFolderPathA(HWND hwnd, LPSTR path, int csidl, BOOL create);
+BOOL SHGetSpecialFolderPathW(HWND hwnd, LPWSTR path, int csidl, BOOL create);
+HRESULT SHGetSpecialFolderLocation(HWND hwnd, int csidl, PIDLIST_ABSOLUTE *pidl);
+void ILFree(PIDLIST_ABSOLUTE pidl);
+
+// ole32: the shell's memory (a PIDL is freed with CoTaskMemFree) and COM's start
+#define COINIT_APARTMENTTHREADED 0x2
+#define COINIT_MULTITHREADED 0x0
+#define COINIT_DISABLE_OLE1DDE 0x4
+LPVOID CoTaskMemAlloc(SIZE_T size);
+LPVOID CoTaskMemRealloc(LPVOID p, SIZE_T size);
+void CoTaskMemFree(LPVOID p);
+HRESULT CoInitialize(LPVOID reserved);
+HRESULT CoInitializeEx(LPVOID reserved, DWORD flags);
+void CoUninitialize(void);
+
 #define NOTIFYICONDATA __AW(NOTIFYICONDATA)
 #define PNOTIFYICONDATA __AW(PNOTIFYICONDATA)
 #define SHFILEOPSTRUCT __AW(SHFILEOPSTRUCT)
@@ -91,3 +154,11 @@ HICON ExtractIconW(HINSTANCE inst, LPCWSTR file, UINT index);
 #define SHGetFolderPath __AW(SHGetFolderPath)
 #define SHFileOperation __AW(SHFileOperation)
 #define ExtractIcon __AW(ExtractIcon)
+#define BROWSEINFO __AW(BROWSEINFO)
+#define PBROWSEINFO __AW(PBROWSEINFO)
+#define LPBROWSEINFO __AW(LPBROWSEINFO)
+#define SHBrowseForFolder __AW(SHBrowseForFolder)
+#define SHGetPathFromIDList __AW(SHGetPathFromIDList)
+#define SHGetSpecialFolderPath __AW(SHGetSpecialFolderPath)
+#define BFFM_SETSTATUSTEXT __AW(BFFM_SETSTATUSTEXT)
+#define BFFM_SETSELECTION __AW(BFFM_SETSELECTION)

@@ -1,0 +1,4 @@
+# Elements: пример cyberpunk.c
+kind=Window
+config=Debug
+file=cyberpunk.c

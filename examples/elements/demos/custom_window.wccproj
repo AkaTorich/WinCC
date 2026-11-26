@@ -1,0 +1,4 @@
+# Elements: пример custom_window.c
+kind=Window
+config=Debug
+file=custom_window.c

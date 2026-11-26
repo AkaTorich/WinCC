@@ -1,0 +1,4 @@
+# Elements: пример hello.c
+kind=Window
+config=Debug
+file=hello.c

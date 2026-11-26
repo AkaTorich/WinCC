@@ -275,5 +275,10 @@ namespace WinCC.Editor
 
         static bool IsIdentStart(char c) { return char.IsLetter(c) || c == '_' || c == '$'; }
         static bool IsIdentChar(char c) { return char.IsLetterOrDigit(c) || c == '_' || c == '$'; }
+
+        /// <summary>Слова языка, типы и постоянные — для подсказок ввода.</summary>
+        public static IEnumerable<string> Keywords { get { return keywords; } }
+        public static IEnumerable<string> Types { get { return types; } }
+        public static IEnumerable<string> Constants { get { return constants; } }
     }
 }

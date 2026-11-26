@@ -638,6 +638,58 @@ int rt__fstat64(int fd, RtStat *st)
     return 0;
 }
 
+// stdio.h of Microsoft with UTF-16 names: _wfopen and the like -- the name in UTF-8, then the usual function
+int WideCharToMultiByte(unsigned cp, DWORD flags, const WCHAR *w, int wn, char *s, int sn, const char *def, BOOL *used);
+void *rt_fopen(const char *name, const char *mode);
+void *rt_freopen(const char *name, const char *mode, void *f);
+int rt_remove(const char *name);
+int rt_rename(const char *from, const char *to);
+
+static char *utf8_name(const WCHAR *w)
+{
+    if (!w) return 0;
+    int n = WideCharToMultiByte(65001, 0, w, -1, 0, 0, 0, 0);
+    char *s = rt_malloc(n > 0 ? (size_t)n : 1);
+    if (!s) return 0;
+    if (n <= 0 || !WideCharToMultiByte(65001, 0, w, -1, s, n, 0, 0)) s[0] = 0;
+    return s;
+}
+
+void *rt__wfopen(const WCHAR *name, const WCHAR *mode)
+{
+    char *n = utf8_name(name), *m = utf8_name(mode);
+    void *f = n && m ? rt_fopen(n, m) : 0;
+    rt_free(n);
+    rt_free(m);
+    return f;
+}
+
+void *rt__wfreopen(const WCHAR *name, const WCHAR *mode, void *file)
+{
+    char *n = utf8_name(name), *m = utf8_name(mode);
+    void *f = m ? rt_freopen(n, m, file) : 0;
+    rt_free(n);
+    rt_free(m);
+    return f;
+}
+
+int rt__wremove(const WCHAR *name)
+{
+    char *n = utf8_name(name);
+    int r = n ? rt_remove(n) : -1;
+    rt_free(n);
+    return r;
+}
+
+int rt__wrename(const WCHAR *from, const WCHAR *to)
+{
+    char *a = utf8_name(from), *b = utf8_name(to);
+    int r = a && b ? rt_rename(a, b) : -1;
+    rt_free(a);
+    rt_free(b);
+    return r;
+}
+
 // The names programs call (io.h, direct.h, sys/stat.h): the Microsoft ones and the POSIX ones
 #define F(name, fn) ".alias " name ", " #fn "\n"
 asm(
@@ -660,5 +712,6 @@ asm(
     F("_getdrive", rt__getdrive) F("_chdrive", rt__chdrive)
     F("_stat64", rt__stat64) F("_stat", rt__stat64) F("stat", rt__stat64) F("_stati64", rt__stat64)
     F("_fstat64", rt__fstat64) F("_fstat", rt__fstat64) F("fstat", rt__fstat64) F("_fstati64", rt__fstat64)
+    F("_wfopen", rt__wfopen) F("_wfreopen", rt__wfreopen) F("_wremove", rt__wremove) F("_wrename", rt__wrename)
 );
 #undef F

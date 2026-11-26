@@ -15,6 +15,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Resource Include="icon.ico" />
+    <Reference Include="System.Drawing" />
+    <!-- встроенные заголовки wcc: из них подсказки ввода берут имена stdio.h, string.h… (Editor\Completion\Symbols.cs) -->
+    <EmbeddedResource Include="..\compiler\headers.c" LogicalName="headers.c" />
     <Compile Remove="tools\**" />
     <None Remove="tools\**" />
   </ItemGroup>

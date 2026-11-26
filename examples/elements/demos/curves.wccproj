@@ -1,0 +1,4 @@
+# Elements: пример curves.c
+kind=Window
+config=Debug
+file=curves.c

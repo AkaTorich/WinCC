@@ -1,0 +1,5 @@
+# Elements: пример fonts.c
+kind=Window
+config=Debug
+file=fonts.c
+file=elm_fonts.h

@@ -315,6 +315,52 @@ void *cc_heap_more(size_t want, size_t *got)
 
 // ---- environment, other programs, the end ----
 
+// _wgetenv (stdlib.h of Microsoft): getenv in UTF-16, each name with its own text as well
+typedef struct WEnvValue { struct WEnvValue *next; WCHAR *name, *value; } WEnvValue;
+static WEnvValue *g_wenv;
+
+static WCHAR *wcopy_n(const WCHAR *s, int n)
+{
+    WCHAR *r = rt_malloc(((size_t)n + 1) * sizeof(WCHAR));
+    if (!r) return 0;
+    for (int i = 0; i < n; i++) r[i] = s[i];
+    r[n] = 0;
+    return r;
+}
+
+WCHAR *rt__wgetenv(const WCHAR *name)
+{
+    static WCHAR wv[32768];
+    if (!name) return 0;
+    DWORD n = GetEnvironmentVariableW(name, wv, 32768);
+    if (!n || n >= 32768)
+        return 0;
+    WEnvValue *e = g_wenv;
+    for (; e; e = e->next) {
+        int k = 0;
+        while (e->name[k] && e->name[k] == name[k]) k++;
+        if (!e->name[k] && !name[k])
+            break;
+    }
+    if (e) {
+        DWORD k = 0;
+        while (k < n && e->value[k] == wv[k]) k++;
+        if (k == n && !e->value[k])
+            return e->value;            // the same as before: the same text
+    } else {
+        int nl = 0;
+        while (name[nl]) nl++;
+        e = rt_malloc(sizeof(WEnvValue));
+        if (!e) return 0;
+        e->name = wcopy_n(name, nl);
+        if (!e->name) return 0;
+        e->next = g_wenv;
+        g_wenv = e;
+    }
+    e->value = wcopy_n(wv, (int)n);     // the old text is not freed: a pointer to it may live on
+    return e->value;
+}
+
 // getenv: each name keeps its own text, so getenv("A") stays as it was after getenv("B");
 // a value that changed gets a new text (the old one is not freed: a pointer to it may live on)
 typedef struct EnvValue { struct EnvValue *next; char *name, *value; } EnvValue;

@@ -344,6 +344,23 @@ namespace WinCC
 
         public void StopDebuggingForSnapshot() { DebugCommandSend(DebugCommand.Stop); }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+        struct NativeRect { public int Left, Top, Right, Bottom; }
+
+        /// <summary>Снимок окна с экрана — вместе со всплывающими окнами над ним (список подсказок).</summary>
+        public void SaveScreenSnapshot(string file)
+        {
+            NativeRect r;
+            GetWindowRect(new System.Windows.Interop.WindowInteropHelper(this).Handle, out r);
+            using (var bmp = new System.Drawing.Bitmap(r.Right - r.Left, r.Bottom - r.Top))
+            {
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
+                    g.CopyFromScreen(r.Left, r.Top, 0, 0, bmp.Size);
+                bmp.Save(file, System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
+
         /// <summary>Клавиши отладки; true — клавиша была её.</summary>
         bool DebugKey(ModifierKeys mods, Key key)
         {

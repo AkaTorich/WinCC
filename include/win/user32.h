@@ -877,6 +877,54 @@ typedef struct tagWINDOWPOS {
     HWND hwnd, hwndInsertAfter; int x, y, cx, cy; UINT flags;
 } WINDOWPOS, *LPWINDOWPOS, *PWINDOWPOS;
 
+// WM_NCCALCSIZE with wparam TRUE: the new, old and client rectangles
+typedef struct tagNCCALCSIZE_PARAMS {
+    RECT rgrc[3]; PWINDOWPOS lppos;
+} NCCALCSIZE_PARAMS, *LPNCCALCSIZE_PARAMS;
+
+// WM_SIZING: which edge is dragged
+#define WMSZ_LEFT 1
+#define WMSZ_RIGHT 2
+#define WMSZ_TOP 3
+#define WMSZ_TOPLEFT 4
+#define WMSZ_TOPRIGHT 5
+#define WMSZ_BOTTOM 6
+#define WMSZ_BOTTOMLEFT 7
+#define WMSZ_BOTTOMRIGHT 8
+
+// SetLayeredWindowAttributes
+#define LWA_COLORKEY 0x00000001
+#define LWA_ALPHA 0x00000002
+
+// MsgWaitForMultipleObjects: what wakes the wait
+#define QS_KEY 0x0001
+#define QS_MOUSEMOVE 0x0002
+#define QS_MOUSEBUTTON 0x0004
+#define QS_POSTMESSAGE 0x0008
+#define QS_TIMER 0x0010
+#define QS_PAINT 0x0020
+#define QS_SENDMESSAGE 0x0040
+#define QS_HOTKEY 0x0080
+#define QS_ALLPOSTMESSAGE 0x0100
+#define QS_RAWINPUT 0x0400
+#define QS_TOUCH 0x0800
+#define QS_POINTER 0x1000
+#define QS_MOUSE (QS_MOUSEMOVE | QS_MOUSEBUTTON)
+#define QS_INPUT (QS_MOUSE | QS_KEY | QS_RAWINPUT | QS_TOUCH | QS_POINTER)
+#define QS_ALLEVENTS (QS_INPUT | QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_HOTKEY)
+#define QS_ALLINPUT (QS_INPUT | QS_POSTMESSAGE | QS_TIMER | QS_PAINT | QS_HOTKEY | QS_SENDMESSAGE)
+#define MWMO_WAITALL 0x0001
+#define MWMO_ALERTABLE 0x0002
+#define MWMO_INPUTAVAILABLE 0x0004
+
+// per-monitor DPI (Windows 10)
+typedef struct DPI_AWARENESS_CONTEXT__ *DPI_AWARENESS_CONTEXT;
+#define DPI_AWARENESS_CONTEXT_UNAWARE ((DPI_AWARENESS_CONTEXT)-1)
+#define DPI_AWARENESS_CONTEXT_SYSTEM_AWARE ((DPI_AWARENESS_CONTEXT)-2)
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE ((DPI_AWARENESS_CONTEXT)-3)
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
+#define DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED ((DPI_AWARENESS_CONTEXT)-5)
+
 typedef struct tagWINDOWPLACEMENT {
     UINT length, flags, showCmd; POINT ptMinPosition, ptMaxPosition; RECT rcNormalPosition;
 } WINDOWPLACEMENT, *PWINDOWPLACEMENT, *LPWINDOWPLACEMENT;
@@ -1082,6 +1130,12 @@ HBRUSH GetSysColorBrush(int index);
 UINT GetDpiForWindow(HWND hwnd);
 UINT GetDpiForSystem(void);
 BOOL SetProcessDPIAware(void);
+BOOL SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT value);
+DPI_AWARENESS_CONTEXT SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT value);
+DWORD MsgWaitForMultipleObjects(DWORD count, const HANDLE *handles, BOOL wait_all, DWORD ms, DWORD wake);
+DWORD MsgWaitForMultipleObjectsEx(DWORD count, const HANDLE *handles, DWORD ms, DWORD wake, DWORD flags);
+BOOL SetLayeredWindowAttributes(HWND hwnd, COLORREF key, BYTE alpha, DWORD flags);
+BOOL GetLayeredWindowAttributes(HWND hwnd, COLORREF *key, BYTE *alpha, DWORD *flags);
 HMONITOR MonitorFromWindow(HWND hwnd, DWORD flags);
 HMONITOR MonitorFromPoint(POINT p, DWORD flags);
 BOOL GetMonitorInfoA(HMONITOR m, LPMONITORINFO info);

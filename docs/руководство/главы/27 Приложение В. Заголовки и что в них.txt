@@ -30,8 +30,8 @@
 : `float.h` | `DBL_MAX`, `FLT_EPSILON` и другие пределы | —
 : `errno.h` | `errno` — своя у каждого потока; коды ошибок `EPERM`, `ENOENT`, `ESRCH`, `EINTR`, `EIO`, `ENXIO`, `E2BIG`, `ENOEXEC`, `EBADF`, `ECHILD`, `EAGAIN`, `ENOMEM`, `EACCES`, `EBUSY`, `EEXIST`, `EXDEV`, `ENODEV`, `ENOTDIR`, `EISDIR`, `EINVAL`, `ENFILE`, `EMFILE`, `ENOTTY`, `EFBIG`, `ENOSPC`, `ESPIPE`, `EROFS`, `EMLINK`, `EPIPE`, `EDOM`, `ERANGE`, `EDEADLK`, `ENAMETOOLONG`, `ENOLCK`, `ENOSYS`, `ENOTEMPTY`, `EILSEQ`, `ETIMEDOUT` | —
 : `assert.h` | `assert`; с `NDEBUG` — пустой | —
-: `stdio.h` | `printf` и `scanf` со всеми вариантами, файлы `FILE`, `fopen`…`fclose`, `setvbuf` (`_IOFBF`, `_IOLBF`, `_IONBF`), `remove`, `rename`, `tmpfile`; номер файла `_fileno` и `fileno`, `FILE` по номеру `_fdopen` и `fdopen`, места в файле за 2 ГБ `_fseeki64` и `_ftelli64`; имена Microsoft `_snprintf`, `_vsnprintf` | 51
-: `stdlib.h` | память, числа из строк, `qsort`, `bsearch`, `rand`, `exit`, `atexit`, `getenv`, `system`, многобайтовые строки | 39
+: `stdio.h` | `printf` и `scanf` со всеми вариантами, файлы `FILE`, `fopen`…`fclose`, `setvbuf` (`_IOFBF`, `_IOLBF`, `_IONBF`), `remove`, `rename`, `tmpfile`; номер файла `_fileno` и `fileno`, `FILE` по номеру `_fdopen` и `fdopen`, места в файле за 2 ГБ `_fseeki64` и `_ftelli64`; файлы с именем UTF-16 `_wfopen`, `_wfreopen`, `_wremove`, `_wrename`; имена Microsoft `_snprintf`, `_vsnprintf` | 55
+: `stdlib.h` | память, числа из строк, `qsort`, `bsearch`, `rand`, `exit`, `atexit`, `getenv` и `_wgetenv`, `system`, многобайтовые строки | 40
 : `string.h` | строки и память, а также `strdup`, `strndup`, `strtok_r`, `strcasecmp`, `stpcpy`, `memccpy`; имена Microsoft `_strdup`, `_strndup`, `_stricmp`, `_strnicmp`, `_strcmpi`, `stricmp`, `strnicmp` | 30
 : `strings.h` | `strcasecmp`, `strncasecmp` | 2
 : `ctype.h` | `isalpha`, `isdigit`… `toupper`, `tolower` | 14
@@ -40,7 +40,7 @@
 : `setjmp.h` | `jmp_buf`, `setjmp`, `longjmp` | 2
 : `signal.h` | `signal`, `raise`, `SIGINT`, `SIGFPE`, `SIGSEGV`… | 2
 : `locale.h` | `setlocale`, `localeconv` | 2
-: `wchar.h` | строки `wchar_t`, широкий ввод-вывод `wprintf`, `fgetws`…, переводы UTF-8 ↔ UTF-16 | 61
+: `wchar.h` | строки `wchar_t`, широкий ввод-вывод `wprintf`, `fgetws`…, имена Microsoft `_snwprintf` и `_vsnwprintf` (`%s` — широкая строка), переводы UTF-8 ↔ UTF-16 | 63
 : `wctype.h` | `iswalpha`, `towupper` и другие для `wchar_t` | 18
 : `uchar.h` | `char16_t`, `char32_t`, `mbrtoc16`, `c16rtomb`, `mbrtoc32`, `c32rtomb` | 4
 
@@ -119,13 +119,13 @@
 := Файл | DLL | Функций | Что в нём
 : `win\types.h` | — | — | типы (`DWORD`, `HANDLE`, `HWND`, `LPSTR`…), `RECT`, `POINT`, `SYSTEMTIME`, `GUID`, макросы, коды ошибок
 : `win\kernel32.h` | kernel32, библиотека WinCC | 220 | процессы, потоки, файлы, память, время, кодировки, консоль, DLL; атомарные `Interlocked…` — из библиотеки WinCC
-: `win\user32.h` | user32 | 248 | окна, сообщения, элементы, меню, мышь, клавиатура, таймеры, буфер обмена
+: `win\user32.h` | user32 | 254 | окна, сообщения, элементы, меню, мышь, клавиатура, таймеры, буфер обмена
 : `win\gdi32.h` | gdi32, user32 | 105 | рисование GDI, текст, картинки, области; 11 из них — переходники WinCC
 : `win\comdlg32.h` | comdlg32 | 9 | диалоги «Открыть», «Сохранить», выбор цвета и шрифта
-: `win\shell32.h` | shell32 | 16 | открыть файл программой, перетаскивание, значок в трее, папки Windows
+: `win\shell32.h` | shell32, ole32 | 31 | открыть файл программой, перетаскивание, значок в трее, папки Windows, выбор папки, память оболочки и запуск COM
 : `win\advapi32.h` | advapi32 | 21 | реестр, имя пользователя
 : `win\except.h` | kernel32 | 13 | исключения: коды, `EXCEPTION_RECORD`, `CONTEXT`, `EXCEPTION_POINTERS`, `RaiseException`, обработчики всей программы
-: всего | | 632 |
+: всего | | 653 |
 
 Строк `#define` в этих файлах 1475 — константы и макросы, из них 851 — в `user32.h`: сообщения `WM_`, стили `WS_` и `ES_`, коды клавиш `VK_`, флаги `MB_`, `SW_`, `MF_`.
 
@@ -193,18 +193,18 @@ A-функции берут UTF-8, потому что в каждую прог�
 
 := Тема | Функции
 : классы и окна | RegisterClassA/W, RegisterClassExA/W, UnregisterClassA/W, GetClassInfoExA/W, CreateWindowExA/W, DestroyWindow, ShowWindow, UpdateWindow, GetClassNameA/W, GetClassLongPtrA/W, SetClassLongPtrA/W, GetWindowLongA/W, SetWindowLongA/W, GetWindowLongPtrA/W, SetWindowLongPtrA/W, SetPropA/W, GetPropA/W, RemovePropA/W
-: сообщения | GetMessageA/W, PeekMessageA/W, TranslateMessage, DispatchMessageA/W, WaitMessage, PostQuitMessage, PostMessageA/W, PostThreadMessageA/W, SendMessageA/W, DefWindowProcA/W, CallWindowProcA/W, IsDialogMessageA/W, RegisterWindowMessageA/W
+: сообщения | GetMessageA/W, PeekMessageA/W, TranslateMessage, DispatchMessageA/W, WaitMessage, MsgWaitForMultipleObjects, MsgWaitForMultipleObjectsEx, PostQuitMessage, PostMessageA/W, PostThreadMessageA/W, SendMessageA/W, DefWindowProcA/W, CallWindowProcA/W, IsDialogMessageA/W, RegisterWindowMessageA/W
 : окна-сообщения и звук | MessageBoxA/W, MessageBeep
 : клавиши-ускорители | CreateAcceleratorTableA/W, TranslateAcceleratorA/W, DestroyAcceleratorTable
 : перерисовка | BeginPaint, EndPaint, InvalidateRect, ValidateRect, RedrawWindow, GetUpdateRect, GetDC, GetWindowDC, ReleaseDC
-: размер и положение | GetClientRect, GetWindowRect, SetWindowPos, MoveWindow, GetWindowPlacement, SetWindowPlacement, AdjustWindowRect, AdjustWindowRectEx, ScreenToClient, ClientToScreen, MapWindowPoints, WindowFromPoint, ChildWindowFromPoint
+: размер и положение | GetClientRect, GetWindowRect, SetWindowPos, SetLayeredWindowAttributes, GetLayeredWindowAttributes, MoveWindow, GetWindowPlacement, SetWindowPlacement, AdjustWindowRect, AdjustWindowRectEx, ScreenToClient, ClientToScreen, MapWindowPoints, WindowFromPoint, ChildWindowFromPoint
 : текст окна и элементы | SetWindowTextA/W, GetWindowTextA/W, GetWindowTextLengthA/W, GetDlgItem, GetDlgCtrlID, SetDlgItemTextA/W, GetDlgItemTextA/W, SetDlgItemInt, GetDlgItemInt, CheckDlgButton, IsDlgButtonChecked, CheckRadioButton, SendDlgItemMessageA/W
 : состояние и фокус | EnableWindow, IsWindowEnabled, IsWindowVisible, IsWindow, IsIconic, IsZoomed, SetFocus, GetFocus, GetActiveWindow, SetActiveWindow, GetForegroundWindow, SetForegroundWindow, BringWindowToTop, FlashWindow
 : родство и поиск окон | GetParent, SetParent, GetDesktopWindow, GetWindow, FindWindowA/W, FindWindowExA/W, EnumWindows, EnumChildWindows
 : курсор и значки | LoadCursorA/W, LoadIconA/W, LoadImageA/W, DestroyIcon, DestroyCursor, DrawIcon, DrawIconEx, SetCursor, GetCursor, ShowCursor, GetCursorPos, SetCursorPos, ClipCursor
 : мышь и клавиатура | SetCapture, GetCapture, ReleaseCapture, TrackMouseEvent, GetCaretBlinkTime, GetKeyState, GetAsyncKeyState, GetKeyboardState, MapVirtualKeyA/W, keybd_event, mouse_event, RegisterHotKey, UnregisterHotKey, GetKeyboardLayout
 : таймеры | SetTimer, KillTimer
-: система, масштаб, мониторы | GetSystemMetrics, SystemParametersInfoA/W, GetSysColor, GetSysColorBrush, GetDpiForWindow, GetDpiForSystem, SetProcessDPIAware, MonitorFromWindow, MonitorFromPoint, GetMonitorInfoA/W, EnumDisplayMonitors, ExitWindowsEx, LockWorkStation
+: система, масштаб, мониторы | GetSystemMetrics, SystemParametersInfoA/W, GetSysColor, GetSysColorBrush, GetDpiForWindow, GetDpiForSystem, SetProcessDPIAware, SetProcessDpiAwarenessContext, SetThreadDpiAwarenessContext, MonitorFromWindow, MonitorFromPoint, GetMonitorInfoA/W, EnumDisplayMonitors, ExitWindowsEx, LockWorkStation
 : меню | CreateMenu, CreatePopupMenu, DestroyMenu, AppendMenuA/W, InsertMenuA/W, ModifyMenuA/W, DeleteMenu, RemoveMenu, SetMenu, GetMenu, GetSubMenu, GetSystemMenu, GetMenuItemCount, CheckMenuItem, CheckMenuRadioItem, EnableMenuItem, DrawMenuBar, TrackPopupMenu
 : буфер обмена | OpenClipboard, CloseClipboard, EmptyClipboard, SetClipboardData, GetClipboardData, IsClipboardFormatAvailable
 : рисование user32 | FillRect, FrameRect, InvertRect, DrawFocusRect, DrawEdge, DrawTextA/W
@@ -232,7 +232,7 @@ A-функции берут UTF-8, потому что в каждую прог�
 
 := Файл | Функции
 : `comdlg32.h` | GetOpenFileNameA/W, GetSaveFileNameA/W, ChooseColorA/W, ChooseFontA/W, CommDlgExtendedError
-: `shell32.h` | ShellExecuteA/W, DragAcceptFiles, DragQueryFileA/W, DragQueryPoint, DragFinish, Shell_NotifyIconA/W, SHGetFolderPathA/W, SHFileOperationA/W, CommandLineToArgvW, ExtractIconA/W
+: `shell32.h` | ShellExecuteA/W, DragAcceptFiles, DragQueryFileA/W, DragQueryPoint, DragFinish, Shell_NotifyIconA/W, SHGetFolderPathA/W, SHFileOperationA/W, CommandLineToArgvW, ExtractIconA/W, SHBrowseForFolderA/W, SHGetPathFromIDListA/W, SHGetSpecialFolderPathA/W, SHGetSpecialFolderLocation, ILFree; из ole32 — CoTaskMemAlloc, CoTaskMemRealloc, CoTaskMemFree, CoInitialize, CoInitializeEx, CoUninitialize
 : `advapi32.h` | RegOpenKeyExA/W, RegCreateKeyExA/W, RegQueryValueExA/W, RegGetValueA/W, RegSetValueExA/W, RegDeleteValueA/W, RegDeleteKeyA/W, RegEnumKeyExA/W, RegEnumValueA/W, RegCloseKey, GetUserNameA/W
 
 ### except.h: исключения
@@ -255,6 +255,7 @@ A-функции берут UTF-8, потому что в каждую прог�
 := Заголовок | Что в нём | Функций | DLL
 : `commdlg.h` | только подключает `windows.h`: диалоги уже там | — | comdlg32
 : `shellapi.h` | только подключает `windows.h`: shell32 уже там | — | shell32
+: `shlobj.h` | только подключает `windows.h`: выбор папки `SHBrowseForFolder`, `BROWSEINFO`, `ITEMIDLIST`, `BIF_…`, `BFFM_…`, `CSIDL_…` уже там | — | shell32
 : `windowsx.h` | 48 макросов-обёрток над сообщениями | — | —
 : `tchar.h` | `TCHAR`, `_T`, `_tmain` и имена функций Си для обеих кодировок | — | —
 : `commctrl.h` | элементы Common Controls: классы, стили, сообщения | 2 | comctl32
@@ -330,9 +331,9 @@ A-функции берут UTF-8, потому что в каждую прог�
 : точки | GdipBitmapGetPixel, GdipBitmapSetPixel, GdipBitmapLockBits, GdipBitmapUnlockBits
 : цвет картинок | GdipCreateImageAttributes, GdipDisposeImageAttributes, GdipSetImageAttributesColorMatrix
 
-## Сеть и WUI
+## Сеть, WUI и Elements
 
-Подробно об этих заголовках — в частях IV и V.
+Подробно об этих заголовках — в частях IV, V и VI.
 
 := Заголовок | Что в нём | Функций | Откуда
 : `winsock2.h` | сокеты: TCP, UDP, IPv4 и IPv6, `select`, `WSAPoll`, события в окно и в объект, коды `ioctlsocket` и `WSAIoctl` (`IOC_VENDOR`, `_WSAIOW` и соседи) — глава 21 | 57 | ws2_32
@@ -343,10 +344,11 @@ A-функции берут UTF-8, потому что в каждую прог�
 : `net.h` | библиотека сети: HTTP, TCP, UDP, свой веб-сервер — главы 18–20, приложение Д | 47 | `lib\net` исходниками
 : `wui.h` | библиотека оформления окон WUI — главы 13–17, приложение Г | 72 | `lib\wui` исходниками
 : `wui_icons.h` | 123 значка ThemeLibrary: `WUI_ICON_HOME`… — глава 16 | — | —
+: `elements.h` | библиотека окон Elements: свои формы окон, эффекты, элементы, шрифты — глава 24, приложение Ж | — | `lib\elements` исходниками
 
 `FD_SETSIZE` — сколько сокетов вмещает набор `fd_set` для `select` — в `winsock2.h` равен 64. Если нужно больше, своё значение задают строкой `#define FD_SETSIZE 256` до `#include <winsock2.h>` (или до `net.h`, `ws2tcpip.h`, `mswsock.h` — они подключают его сами).
 
-`wui.h` делает программу оконной даже с `main` — в нём стоит `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")`.
+`wui.h` и `elements.h` делают программу оконной даже с `main` — в них стоит `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")`.
 
 ## Чего нет
 
@@ -354,6 +356,6 @@ A-функции берут UTF-8, потому что в каждую прог�
 
 := Заголовок | Чем заменить
 : `unistd.h` | имена POSIX из `io.h` (`open`, `read`, `write`, `close`, `access`, `unlink`), `direct.h` (`chdir`, `getcwd`, `rmdir`) и `process.h` (`getpid`)
-: `shlwapi.h`, `shlobj.h`, `dwmapi.h`, `winternl.h`, `psapi.h`, `tlhelp32.h` и другие заголовки Windows | своё объявление нужных функций и `#pragma comment(lib, "имя")` — глава 11
+: `shlwapi.h`, `dwmapi.h`, `winternl.h`, `psapi.h`, `tlhelp32.h` и другие заголовки Windows | своё объявление нужных функций и `#pragma comment(lib, "имя")` — глава 11
 : `objbase.h` и заголовки COM | функции `ole32` объявляются сами; интерфейсы COM описываются вручную
 : `xmmintrin.h`, `emmintrin.h`, `immintrin.h` и другие заголовки SSE и AVX с типом `__m128` | вставки на ассемблере: команды SSE и AVX ассемблер WinCC понимает (глава 8)

@@ -34,6 +34,10 @@ namespace WinCC
                 KindBox.Items.Add(new ComboBoxItem { Content = ProgramKinds.Title(k), Tag = k });
             KindBox.SelectedIndex = Array.IndexOf(ProgramKinds.All, settings.Kind);
             SettingsButton.Click += (s, e) => EditSettings();
+            Editor.CodeEditor.CompletionAfterLetters = settings.HintLetters;
+            // подсказки ввода берут имена и из других открытых файлов
+            Editor.CodeEditor.OpenTexts = () => System.Linq.Enumerable.Select(Documents,
+                d => new System.Collections.Generic.KeyValuePair<string, string>(d.Name, d.Editor.Text));
             KindBox.SelectionChanged += (s, e) => OnKindChosen();
             BottomRow.Height = new GridLength(settings.BottomShare, GridUnitType.Star);
 
@@ -140,11 +144,14 @@ namespace WinCC
         /// <summary>Окно настроек; новый язык сразу применяется ко всему окну.</summary>
         void EditSettings()
         {
-            var dlg = new SettingsDialog(this, settings.Language);
-            if (dlg.ShowDialog() != true || dlg.Language == settings.Language) return;
+            var dlg = new SettingsDialog(this, settings.Language, settings.HintLetters);
+            if (dlg.ShowDialog() != true) return;
+            bool newLanguage = dlg.Language != settings.Language;
             settings.Language = dlg.Language;
+            settings.HintLetters = dlg.HintLetters;
+            Editor.CodeEditor.CompletionAfterLetters = dlg.HintLetters;
             if (!snapshotMode) settings.Save();
-            ApplyLanguage();
+            if (newLanguage) ApplyLanguage();
         }
 
         /// <summary>Применить язык окна: надписи XAML меняются сами, надписи, сделанные кодом, обновляются здесь.</summary>

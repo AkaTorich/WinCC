@@ -5614,6 +5614,78 @@ int rt_swprintf(RtWchar *ws, size_t n, const RtWchar *fmt, ...)
     return r;
 }
 
+// _snwprintf, _vsnwprintf (Microsoft's own names, so Microsoft's rules): %s and %c are wide, %S and %C narrow
+// (a length letter, %hs %ls, says it itself); n wide characters at most, the NUL only if there is room for it;
+// -1 when the text was cut
+static char *ms_wide_format(const RtWchar *wfmt)
+{
+    char *f = wide_to_utf8(wfmt);
+    if (!f) return 0;
+    size_t len = 0;
+    while (f[len]) len++;
+    char *o = rt_malloc(len * 2 + 1);
+    if (!o) { rt_free(f); return 0; }
+    size_t i = 0, k = 0;
+    while (f[i]) {
+        if (f[i] != '%') { o[k++] = f[i++]; continue; }
+        o[k++] = f[i++];
+        if (f[i] == '%') { o[k++] = f[i++]; continue; }
+        while (f[i] && (f[i] == '-' || f[i] == '+' || f[i] == ' ' || f[i] == '#' || f[i] == '.' || f[i] == '*' ||
+                        (f[i] >= '0' && f[i] <= '9')))
+            o[k++] = f[i++];
+        int sized = 0;
+        while (f[i] == 'h' || f[i] == 'l' || f[i] == 'L' || f[i] == 'j' || f[i] == 'z' || f[i] == 't' || f[i] == 'q' ||
+               f[i] == 'w' || f[i] == 'I' || (sized && f[i] >= '0' && f[i] <= '9')) {
+            o[k++] = f[i] == 'w' ? 'l' : f[i];
+            i++;
+            sized = 1;
+        }
+        char c = f[i];
+        if (!c) break;
+        i++;
+        if (!sized && (c == 's' || c == 'c')) { o[k++] = 'l'; o[k++] = c; }
+        else if (c == 'S' || c == 'C') o[k++] = (char)(c + 32);
+        else o[k++] = c;
+    }
+    o[k] = 0;
+    rt_free(f);
+    return o;
+}
+
+int rt__vsnwprintf(RtWchar *ws, size_t n, const RtWchar *wfmt, va_list ap)
+{
+    char *fmt = ms_wide_format(wfmt);
+    if (!fmt) return -1;
+    int len;
+    char *out = format_alloc(fmt, ap, &len);
+    rt_free(fmt);
+    if (!out) return -1;
+    size_t k = 0;
+    const char *p = out;
+    int cut = 0;
+    while (*p) {
+        u32 v;
+        int r = utf8_dec(p, 4, &v);
+        if (r <= 0) { v = (u8)*p; r = 1; }
+        if (k + (size_t)wide_units(v) > n) { cut = 1; break; }
+        wide_store(ws + k, v);
+        k += (size_t)wide_units(v);
+        p += r;
+    }
+    if (k < n) ws[k] = 0;
+    rt_free(out);
+    return cut ? -1 : (int)k;
+}
+
+int rt__snwprintf(RtWchar *ws, size_t n, const RtWchar *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int r = rt__vsnwprintf(ws, n, fmt, ap);
+    va_end(ap);
+    return r;
+}
+
 int LOCKED(rt_vfwscanf)(RtFile *f, const RtWchar *wfmt, va_list ap)
 {
     char *fmt = wide_to_utf8(wfmt);
@@ -5817,7 +5889,7 @@ asm(
     F("labs", rt_labs) F("atol", rt_atol) F("ldiv", rt_ldiv) F("strtol", rt_strtol) F("strtoul", rt_strtoul)
     F("wcstol", rt_wcstol32) F("wcstoul", rt_wcstoul32) F("lround", rt_lround32) F("lrint", rt_lrint32)
     F("scalbln", rt_scalbln32) F("fseek", rt_fseek32) F("ftell", rt_ftell32)
-    F("getenv", rt_getenv_win) F("system", rt_system_win)
+    F("getenv", rt_getenv_win) F("system", rt_system_win) F("_wgetenv", rt__wgetenv)
     F("_fileno", rt_fileno) F("fileno", rt_fileno) F("_fdopen", rt_fdopen) F("fdopen", rt_fdopen)
     F("_fseeki64", rt_fseek) F("_ftelli64", rt_ftell) F("fseeko", rt_fseek) F("ftello", rt_ftell)
     F("_aligned_malloc", rt__aligned_malloc) F("_aligned_free", rt_free) F("_msize", rt__msize)
@@ -5939,6 +6011,7 @@ static const CcSymbol g_symbols[] = {
     F("fgetwc", rt_fgetwc) F("getwc", rt_fgetwc) F("getwchar", rt_getwchar) F("ungetwc", rt_ungetwc)
     F("fgetws", rt_fgetws) F("fputws", rt_fputws)
     F("wprintf", rt_wprintf) F("fwprintf", rt_fwprintf) F("swprintf", rt_swprintf)
+    F("_snwprintf", rt__snwprintf) F("_vsnwprintf", rt__vsnwprintf)
     F("vwprintf", rt_vwprintf) F("vfwprintf", rt_vfwprintf) F("vswprintf", rt_vswprintf)
     F("wscanf", rt_wscanf) F("fwscanf", rt_fwscanf) F("swscanf", rt_swscanf)
     F("vwscanf", rt_vwscanf) F("vfwscanf", rt_vfwscanf) F("vswscanf", rt_vswscanf)

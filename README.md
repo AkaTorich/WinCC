@@ -68,7 +68,8 @@ the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 12
 | `include\windows.h`, `include\win\*.h` | Windows: types, structures, constants, functions of kernel32, user32, gdi32, comdlg32, shell32, advapi32; `except.h` — exceptions (`EXCEPTION_*`, `CONTEXT`, `RaiseException`) |
 | `include\threads.h stdatomic.h complex.h fenv.h tgmath.h` | C11 and math: threads, atomics, complex numbers (Microsoft style), floating-point environment, `_Generic` wrappers |
 | `include\io.h fcntl.h direct.h process.h conio.h malloc.h intrin.h sal.h sys\stat.h sys\types.h` | Microsoft C headers: descriptors, folders, threads and processes, console, `_alloca`, intrinsics (macros with `asm`), SAL annotations (empty) |
-| `include\windowsx.h tchar.h commctrl.h mmsystem.h commdlg.h shellapi.h` | the rest of the familiar set |
+| `include\windowsx.h tchar.h commctrl.h mmsystem.h commdlg.h shellapi.h shlobj.h` | the rest of the familiar set; `shlobj.h` — choosing a folder (`SHBrowseForFolder`, `SHGetPathFromIDList`, `BROWSEINFO`), item ids, `CoTaskMemFree` (all in `win\shell32.h`); `user32.h` also has `NCCALCSIZE_PARAMS`, `WMSZ_*`, `SetLayeredWindowAttributes`, `MsgWaitForMultipleObjects(Ex)` with `QS_*`/`MWMO_*`, `SetProcessDpiAwarenessContext` |
+| Microsoft C with UTF-16 names | `_wfopen`, `_wfreopen`, `_wremove`, `_wrename` (`runtime\winfile.c`), `_wgetenv` (`winhost.c`), `_snwprintf` / `_vsnwprintf` with Microsoft's rules: `%s` wide, `%S` narrow, no NUL when the text fills the buffer, -1 when cut (`runtime.c`) |
 | `include\win\resource.h`, `include\winres.h winresrc.h winver.h` | resources from the program: `FindResource`, `LoadResource`, `LoadString`, `LoadMenu`, `LoadAccelerators`, `CreateDialogParam`, `DialogBoxParam`, `LoadBitmap`, enumerating and updating resources, version info (`GetFileVersionInfo`, `VerQueryValue` — `version.dll`); `.rc` constants (`VS_VERSION_INFO`, `VOS_*`, `VFT_*`, `IDC_STATIC`) |
 | `include\winsock2.h ws2tcpip.h winhttp.h` (+ `winsock.h`, `ws2ipdef.h` — forward to `winsock2.h`) | `ws2_32` sockets (TCP, UDP, IPv4 and IPv6, select, WSAPoll, window and event notifications, getaddrinfo, inet_pton) and `winhttp` HTTP/HTTPS (requests, headers, proxy, timeouts, WebSocket). 100 functions, all checked against the DLL exports; every constant and structure size checked against MSVC (`tests\winabi\abi.ps1`) |
 | `include\net.h` | the networking library — everything a program calls (see "Networking") |
@@ -85,7 +86,7 @@ the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 12
 | `compiler\host.c`, `build-cctest.cmd` | cctest — the same compiler tested in DynastyOS mode |
 | `ide\` | the WinCC.exe editor (section below) |
 | `setup\` | the installer (`make-setup.ps1`, `Installer.cs`, `SetupWindow.xaml`) |
-| `docs\руководство\` | **WinCC Manual** (in Russian) — a book for people writing programs with WinCC: chapters as text, `python сборка.py` builds the PDF, `python "проверка примеров.py"` compiles every example of the book |
+| `docs\руководство\` | **WinCC Manual** (in Russian) — a book for people writing programs with WinCC: chapters as text, `python сборка.py` builds the PDF, `python "сборка chm.py"` builds the Windows help file `Руководство WinCC.chm` (needs HTML Help Workshop), `python "проверка примеров.py"` compiles every example of the book |
 
 **Unicode.** Sources are UTF-8. Every `.exe` carries a manifest that sets the program's code page to UTF-8, so
 `MessageBoxA`, `CreateWindowExA`, `SetWindowTextA` and the other A-functions take the program's text as is. GDI ignores
@@ -100,7 +101,7 @@ the manifest, so `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`
 - `compiler\build-cctest.cmd` — cctest for DynastyOS mode.
 - **Installer:** `powershell -ExecutionPolicy Bypass -File setup\make-setup.ps1` — builds `wcc.exe` and `WinCC.exe`,
   packs the payload into `setup\payload.zip` (both programs, `runtime\`, `include\`, `lib\`, `examples\` sources, README,
-  "Руководство WinCC.pdf" — the installer will not build without it), and builds `WinCCSetup.exe` into the root with a
+  "Руководство WinCC.pdf" — the installer will not build without it — and "Руководство WinCC.chm" when built), and builds `WinCCSetup.exe` into the root with a
   copy on the desktop.
 
 ## Testing
@@ -125,6 +126,36 @@ the manifest, so `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`
   (`winhost.c`: `cc_utc_seconds`, `cc_utc_offset`).
 - `mbrtowc`/`mbtowc` cannot return a character above U+FFFF (it does not fit into one `wchar_t`); whole-string
   functions (`mbstowcs`, `%ls`, `fputws`, `fgetwc`…) handle UTF-16 surrogate pairs.
+
+## Window library: `elements.h` (Elements)
+
+Elements — a native window library in C in the spirit of WPF on GDI+ (the project `Code\Libraries\Elements`), built
+into WinCC like WUI: `#include <elements.h>`, and wcc builds `lib\elements` with the program and drops what it does not
+call; the program is a windowed one even with `main`. Nothing else is needed: no `.lib`, no `-I`.
+
+```c
+#include <elements.h>
+char name[64] = "World";
+int main(void) {
+    el w = el_window("Hello", 420, 230);
+    el s = el_stack(w, 0);
+    el_edit(s, name, sizeof(name));
+    el_button(s, "Say hello");
+    el_run();
+}
+```
+
+| Where | What |
+|---|---|
+| `include\elements.h` | its header, plus `#pragma comment(lib, "elements")` and `/SUBSYSTEM:WINDOWS` (under `__WINCC__`) |
+| `lib\elements\` | its sources (`el_*.c`, `el_internal.h`, `el_gdip.h` — GDI+ for C) |
+| `examples\elements\demos\` | its 11 examples, a `.wccproj` for each: hello, form, cyberpunk, design, curves, effects, shaped, custom_window, triangle, fonts, fontshow |
+| `examples\elements\fonts\` | its 30 fonts (the font examples look in `..\fonts` next to the `.exe`) |
+| `examples\elements\README.md`, `DOCUMENTATION.md` | its description and every function |
+| `tools\sync-elements.ps1` | takes a fresh Elements from `..\Libraries\Elements` (does not change it) and puts it in these places |
+
+What WinCC got for it: `shlobj.h`, the user32 additions above, `_wfopen`, `_wgetenv`, `_snwprintf`.
+After changes in Elements itself: `powershell -ExecutionPolicy Bypass -File tools\sync-elements.ps1`.
 
 ## Window styling: `wui.h`
 
@@ -332,7 +363,7 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 **Features and where they live:**
 - Window, buttons, status bar, shortcuts, dropping files onto the window — `ide\MainWindow.xaml`, `MainWindow.xaml.cs`.
   Keys: Ctrl+N new, Ctrl+O open, Ctrl+S save, Ctrl+Shift+S save as, Ctrl+W close tab, F7 or Ctrl+B build,
-  F5 debug, Ctrl+F5 run without the debugger, F9 breakpoint, F10 / F11 / Shift+F11 steps, Shift+F5 stop, F1 — the manual (book button on the right of the toolbar), Ctrl+Shift+E — show / hide the project
+  F5 debug, Ctrl+F5 run without the debugger, F9 breakpoint, F10 / F11 / Shift+F11 steps, Shift+F5 stop, F1 — the manual (book button on the right of the toolbar), Ctrl+Space — code hints, Ctrl+Shift+E — show / hide the project
   panel (the project button on the left of the toolbar).
 - A project is a `name.wccproj` file (`ide\Projects\Project.cs`): UTF-8 text, `key=value` lines, paths relative to the
   project folder: `kind=` Console / Window / Dll / Library, `config=` Debug / Release, `output=` output file name (default — the project name), `file=` a project
@@ -364,6 +395,13 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 - The editor — `Editor\CodeEditor.xaml(.cs)`: a standard text box with transparent glyphs (editing, selection, undo are
   its own), Tab/Shift+Tab indent lines, Enter keeps the indent (deeper after `{`), `}` outdents the line,
   Ctrl+wheel — font size.
+  - code hints — `Editor\CodeEditor.Completion.cs`: after N letters of a name (window settings: 1–4, or Ctrl+Space only)
+    a list opens under the caret; arrows, Enter/Tab insert, Esc closes; after `name(` the function's declaration is shown
+    above the line. Names — `Editor\Completion\Symbols.cs`: declarations (functions with parameters, `#define`, `typedef`,
+    `enum`, globals) from the included headers — built into wcc (the text of `compiler\headers.c` is embedded in
+    WinCC.exe), `include\` and your own `"…"` next to the file, following nested `#include`; from this and the other
+    open files; C keywords. The list — `Editor\Completion\CompletionPopup.cs`. Check without a window:
+    `WinCC.exe --completetest report.txt file.c prefix…`; a picture with the list: `--window shot.png complete:file.c:line:col`.
   - highlighting: a line-by-line C lexer — `Editor\CLexer.cs` (keywords, types, constants, strings and characters,
     comments including multi-line ones, numbers, preprocessor with `\` line continuation); visible lines are painted over
     the text box — `Editor\HighlightLayer.cs`;

@@ -1,0 +1,302 @@
+# Приложение Ж. Справочник Elements
+Все функции, типы и константы заголовка `elements.h` — по группам, в порядке заголовка. Размеры — в точках экрана (масштаб HiDPI библиотека учитывает сама), тексты — строки UTF-8, цвета — числа `0xRRGGBB`. Объяснения с примерами — в главе 24, готовые программы — в `examples\elements\demos`.
+
+## Подключение и типы
+
+:= Что | Значение
+: `#include <elements.h>` | весь интерфейс; в WinCC строкой `#pragma comment(lib, "elements")` подключает исходники `lib\elements`, строкой `#pragma comment(linker, "/SUBSYSTEM:WINDOWS")` делает программу оконной даже с `main`
+: `el` | элемент — число `int`; 0 — нет элемента; родитель 0 — само окно
+: `el_fn` | обработчик: `void f(el e, void *arg)`; `e` — элемент события, `arg` — указатель, переданный при подписке
+: рисование | `void f(el e, int w, int h, void *arg)` — для `el_paint` и `el_window_canvas`; `w`, `h` — размер поверхности
+
+## Константы
+
+:= Константа | Значение | Где
+: `EL_STRETCH` | 0 | `el_align`: растянуть на всю ячейку
+: `EL_START` | 1 | `el_align`: к левому или верхнему краю
+: `EL_CENTER` | 2 | `el_align`: посередине
+: `EL_END` | 3 | `el_align`: к правому или нижнему краю
+: `EL_LEFT` | 0 | `el_dock_side`: к левой стороне
+: `EL_TOP` | 1 | `el_dock_side`: к верхней
+: `EL_RIGHT` | 2 | `el_dock_side`: к правой
+: `EL_BOTTOM` | 3 | `el_dock_side`: к нижней
+: `EL_LINEAR` | 0 | анимация: равномерно
+: `EL_EASE_IN_OUT` | 1 | анимация: плавный разгон и торможение
+: `EL_EASE_OUT` | 2 | анимация: быстро в начале, плавно в конце
+: `EL_OVERSHOOT` | 3 | анимация: с перелётом и возвратом
+: `EL_BOUNCE` | 4 | анимация: с отскоками в конце
+: `EL_EASE_IN` | 5 | анимация: плавно в начале
+: `EL_SHIFT` | 1 | `el_mods`: зажат Shift
+: `EL_CTRL` | 2 | `el_mods`: зажат Ctrl
+: `EL_ALT` | 4 | `el_mods`: зажат Alt
+
+## Окно и цикл
+
+:= Функция | Что делает
+: `el el_window(const char *title, int w, int h)` | создаёт окно размером `w × h` точек и возвращает его элемент; само окно раскладывает детей как `el_dock`
+: `void el_title(const char *title)` | сменить заголовок окна
+: `int el_frame(void)` | один кадр: ввод, события, раскладка, рисование; 0 — окно закрыто. Для своего цикла: `while (el_frame()) { … }`
+: `void el_run(void)` | кадры, пока окно не закроют; когда ничего не происходит, окно спит
+: `void el_on_close(el_fn fn, void *arg)` | при закрытии окна звать `fn` вместо выхода; закрыть потом — `el_quit`
+: `void el_quit(void)` | закрыть окно: следующий `el_frame` вернёт 0, `el_run` кончится
+
+## Нестандартные окна
+
+:= Функция | Что делает
+: `void el_frameless(int on)` | 1 — без системной рамки: заголовок, кнопки и фон рисует программа
+: `void el_window_round(int radius)` | скруглить углы окна на `radius` точек; 0 — прямые
+: `void el_window_shape(const char *shape)` | форма: `"rect"`, `"round:24"`, `"ellipse"`, `"pixels"` — контур по непрозрачности нарисованного
+: `void el_window_region(const int *xy, int count)` | любой многоугольный контур: `count` пар `x, y` в точках
+: `void el_window_aspect(int w, int h)` | держать пропорции `w : h` при изменении размера; 0, 0 — свободно
+: `void el_window_opacity(int alpha)` | прозрачность всего окна 0–255
+: `void el_drag_region(el e)` | тянут за элемент `e` — двигается всё окно (своя шапка)
+: `void el_window_minmax(int minw, int minh, int maxw, int maxh)` | пределы размера; -1 — без предела
+: `void el_window_resizable(int on)` | можно ли менять размер; по умолчанию да; безрамочное окно тянут за края
+: `el el_window_canvas(void (*fn)(el e, int w, int h, void *arg), void *arg)` | поверхность во весь фон окна: рисунок функциями `el_g_*`
+
+Форма окна пересчитывается при каждом изменении размера.
+
+## Эффекты окна
+
+:= Функция | Что делает
+: `void el_effect(const char *name, int amount)` | включить эффект силой `amount`; 0 — выключить. Можно несколько сразу
+: `void el_effects_clear(void)` | выключить все эффекты
+
+:= Имя эффекта | Что делает
+: `"dispersion"`, `"chromatic"` | расщепление цветовых каналов
+: `"scanlines"` | строки развёртки
+: `"noise"` | шум
+: `"vignette"` | затемнение краёв
+: `"glitch"` | глитч, анимированный
+: `"bloom"`, `"glow"` | свечение ярких мест
+: `"pixelate"` | крупные пиксели
+: `"grayscale"` | чёрно-белое
+: `"sepia"` | сепия
+: `"invert"` | обращение цветов
+
+Эффект действует на весь кадр, вместе с текстом.
+
+## Панели
+
+:= Функция | Что делает
+: `el el_stack(el parent, int horizontal)` | дети друг за другом: 0 — сверху вниз, 1 — слева направо; промежуток — `el_gap`
+: `el el_dock(el parent)` | дети прижимаются к сторонам по `el_dock_side`, последний занимает остаток
+: `el el_wrap(el parent)` | дети в строку с переносом
+: `el el_grid(el parent, const char *cols, const char *rows)` | сетка; размеры через запятую: `Auto` — по содержимому, число — в точках, `*` — остаток, `2*` — вдвое больший остаток
+: `el el_scroll(el parent)` | один ребёнок с прокруткой колесом и ползунком
+: `el el_canvas(el parent)` | дети стоят там, где велит `el_pos`
+: `el el_border(el parent)` | рамка и фон вокруг одного ребёнка; для нескольких — положить в неё панель
+: `el el_group(el parent, const char *header)` | рамка с заголовком
+: `el el_tabs(el parent)` | вкладки
+: `el el_tab(el tabs, const char *header)` | вкладка; её содержимое кладут в неё как в панель
+
+Ячейки столбцов известной ширины меряются с этой шириной: перенос текста и `el_wrap` в сетке делятся на строки, строки `Auto` растут под них.
+
+## Элементы управления
+
+:= Функция | Что делает
+: `el el_text(el parent, const char *text)` | надпись
+: `el el_button(el parent, const char *text)` | кнопка
+: `el el_check(el parent, const char *text, int *value)` | флажок; пишет 0 или 1 в `*value`
+: `el el_radio(el parent, const char *text, int *group, int value)` | переключатель; выбранный пишет `value` в `*group`; переключатели с общим `group` — одна группа
+: `el el_edit(el parent, char *buf, int cap)` | поле ввода, текст в `buf` вместимостью `cap` байт
+: `el el_memo(el parent, char *buf, int cap)` | многострочное поле с переносом
+: `el el_password(el parent, char *buf, int cap)` | поле пароля, буквы скрыты
+: `el el_combo(el parent, const char *const *items, int count, int *sel)` | раскрывающийся список; номер выбранного — в `*sel`
+: `el el_listbox(el parent, const char *const *items, int count, int *sel)` | список; номер выбранного — в `*sel`
+: `void el_items(el e, const char *const *items, int count)` | заменить строки списка или раскрывающегося списка
+: `el el_slider(el parent, int min, int max, int *value)` | ползунок; значение в `*value`
+: `el el_progress(el parent, int max, int *value)` | полоса хода; показывает `*value` из `max`
+: `el el_image(el parent, const char *path)` | картинка из файла: PNG, JPEG и другие, что читает GDI+
+: `el el_separator(el parent)` | разделительная черта
+
+В полях: выделение мышью и Shift со стрелками, Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, Home и End; в многострочном — стрелки по строкам.
+
+## Меню
+
+:= Функция | Что делает
+: `el el_menubar(el parent)` | полоса меню вверху окна
+: `el el_menu(el parent, const char *text)` | пункт полосы, подменю или пункт подменю; после `\t` — клавиша справа: `"Создать\tCtrl+N"`
+: `void el_menu_check(el item, int *value)` | пункт с галочкой, связанный с `*value`
+: `el el_context_menu(el target)` | меню по правой кнопке на `target`; пункты — `el_menu` внутри него
+: `el el_popup_menu(void)` | отдельное всплывающее меню
+: `void el_menu_popup(el menu, el at, int x, int y)` | открыть меню в точке `x, y` элемента `at`
+
+Нажатие пункта — `el_on_click` на этом пункте.
+
+## Размеры и расположение
+
+:= Функция | Что делает
+: `void el_size(el e, int w, int h)` | размер; -1 — по содержимому
+: `void el_min_size(el e, int w, int h)` | наименьший размер
+: `void el_max_size(el e, int w, int h)` | наибольший размер
+: `void el_margin(el e, int left, int top, int right, int bottom)` | отступ снаружи
+: `void el_padding(el e, int left, int top, int right, int bottom)` | отступ внутри
+: `void el_align(el e, int horizontal, int vertical)` | место в ячейке: `EL_STRETCH`, `EL_START`, `EL_CENTER`, `EL_END`
+: `void el_cell(el e, int row, int col, int rowspan, int colspan)` | ячейка сетки и сколько строк и столбцов она занимает
+: `void el_dock_side(el e, int side)` | сторона в `el_dock`: `EL_LEFT`, `EL_TOP`, `EL_RIGHT`, `EL_BOTTOM`
+: `void el_pos(el e, int x, int y)` | место на `el_canvas`
+: `void el_gap(el e, int px)` | промежуток между детьми панели
+
+## Текст, состояние, вид
+
+:= Функция | Что делает
+: `void el_set_text(el e, const char *text)` | сменить текст надписи, кнопки, поля
+: `const char *el_get_text(el e)` | текст элемента
+: `void el_text_bind(el e, const char *live)` | каждый кадр показывать строку программы `live` как есть
+: `void el_enable(el e, int on)` | 0 — элемент недоступен
+: `void el_show(el e, int on)` | 0 — элемент скрыт и места не занимает
+: `void el_tooltip(el e, const char *text)` | подсказка при наведении
+: `void el_wrap_text(el e, int on)` | 1 — перенос текста по словам
+: `void el_font(el e, int size, int bold)` | размер шрифта и жирность
+: `void el_colors(el e, int fg, int bg)` | цвета текста и фона; -1 — как в теме
+: `void el_frame_style(el e, int color, int width, int radius)` | рамка: цвет, толщина, скругление
+: `void el_style(el e, const char *css)` | оформление строкой — свойства ниже
+: `void el_name(el e, const char *name)` | имя элемента для `el_find` и таблицы стилей (`#имя`)
+: `el el_find(const char *name)` | элемент по имени; 0 — нет такого
+: `void el_select_tab(el tabs, int index)` | открыть вкладку номер `index`
+: `int el_selected_tab(el tabs)` | номер открытой вкладки
+: `void el_scroll_to(el e, int pos)` | прокрутить `el_scroll` до `pos`
+: `void el_focus(el e)` | дать элементу ввод с клавиатуры
+: `el el_focused(void)` | элемент с вводом
+: `void el_clear(el e)` | убрать всех детей панели
+: `void el_remove(el e)` | убрать элемент вместе с детьми
+
+## Шрифты
+
+:= Функция | Что делает
+: `int el_font_add(const char *name, const char *path)` | загрузить `.ttf` или `.otf` и дать имя; 1 — удалось
+: `int el_font_add_memory(const char *name, const void *data, int size)` | то же из байтов шрифта в памяти — шрифт внутри `.exe`
+: `void el_font_face(el e, const char *family)` | шрифт элемента по имени: `"default"` (Segoe UI), `"mono"` (Consolas) или загруженное
+
+Каждый загруженный шрифт — в своём наборе: имя всегда значит тот файл, из которого его загрузили. Тридцать шрифтов Elements — в `examples\elements\fonts`: Elm Grotesk (Light, Bold, Black, Italic, Condensed, Extended), Elm Compressed, Elm Geometric (Light, Bold), Elm Humanist (Bold, Italic), Elm Rounded (Bold), Elm Techno (Bold), Elm Mono (Bold), Elm Typewriter, Elm Slab (Bold), Elm Serif (Bold, Italic), Elm Didone, Elm Oldstyle, Elm Hairline, Elm Wide Light.
+
+## Свойства стиля
+
+Строка для `el_style` и правил таблицы: свойства через пробел, у каждого — имя, двоеточие, значение.
+
+:= Свойство | Значение
+: `background:#223` | цвет фона
+: `color:#fff` | цвет текста
+: `border:#456` | цвет рамки
+: `border-width:1` | толщина рамки
+: `radius:6` | скругление углов
+: `padding:4 8` | внутренний отступ: одно, два или четыре числа
+: `margin:0 0 8 0` | внешний отступ
+: `width:120`, `height:32` | размер
+: `gradient:#1a2a6c #b21f1f vertical` | градиент двух цветов: `vertical`, `horizontal` или `diagonal`
+: `background-alpha:160` | прозрачность фона 0–255 — «стекло»
+: `background-image:путь` | картинка фоном
+: `shadow:#000 18 0 6 120` | тень: цвет, размытие, сдвиг x, сдвиг y, сила; `shadow:none` — без тени
+: `hover-background`, `press-background` | фон под мышью и при нажатии
+: `hover-color`, `hover-border` | цвет текста и рамки под мышью
+: `font-size:16` | размер шрифта
+: `font-weight:bold` | жирный
+: `font-family:mono` | шрифт по имени; имя может быть из нескольких слов
+: `text-align:center` | выравнивание текста: `center` или `right`
+
+## Таблица стилей
+
+:= Функция | Что делает
+: `void el_stylesheet(const char *css)` | правила для всего окна: `"button{radius:10} .card{background:#fff;background-alpha:28} #title{font-size:28}"`
+: `int el_stylesheet_file(const char *path)` | правила из файла; 1 — прочитан
+: `void el_class(el e, const char *classes)` | классы элемента через пробел: `"card big"`
+
+Выборщики: вид элемента (`button`), класс (`.card`), имя (`#title`), вид с классом (`button.big`). Собственные настройки элемента сильнее правил таблицы.
+
+## Темы
+
+:= Функция | Что делает
+: `void el_theme(int dark)` | 1 — тёмная основа, 0 — светлая
+: `void el_accent(int rgb)` | цвет акцента
+: `void el_default_font(int size)` | размер шрифта по умолчанию
+: `void el_theme_color(int slot, int rgb)` | цвет одной ячейки темы — номера ниже
+: `void el_corner_radius(int r)` | скругление элементов по умолчанию
+: `int el_theme_named(const char *name)` | тема по имени; возвращает её номер
+: `const char *el_theme_name(int index)` | имя темы по номеру
+
+:= Ячейка | Цвет | Ячейка | Цвет
+: 0 | окно | 7 | яркий текст
+: 1 | панель | 8 | тусклый текст
+: 2 | кнопка | 9 | акцент
+: 3 | наведение | 10 | текст на акценте
+: 4 | нажатие | 11 | поле ввода
+: 5 | рамка | 12 | выделение
+: 6 | текст | 13 | меню
+
+Имена тем: Ночь, День, Аметист, Изумруд, Сапфир, Рубин, Янтарь, Обсидиан, Пергамент, Океан, Лес, Сакура, Графит, Неон, Золото, Лёд.
+
+## События
+
+:= Функция | Что делает
+: `void el_on_click(el e, el_fn fn, void *arg)` | нажатие: кнопка, пункт меню, флажок, Enter в поле, щелчок по надписи, картинке, панели
+: `void el_on_change(el e, el_fn fn, void *arg)` | элемент изменил свою переменную: поле, список, ползунок, флажок, переключатель
+: `int el_clicked(el e)` | было ли нажатие за последний кадр — для своего цикла
+: `int el_changed(el e)` | было ли изменение за последний кадр
+
+## Анимации и таймеры
+
+:= Функция | Что делает
+: `void el_animate(el e, const char *prop, int from, int to, int ms, int easing, int loop)` | анимация свойства: `"opacity"` 0–255, `"x"` и `"y"` — сдвиг в точках, `"scale"` — в процентах, `"rotate"` — в градусах; `loop`: 0 — один раз, 1 — по кругу, 2 — туда и обратно
+: `void el_appear(el e, const char *how, int ms)` | появление: `"fade"`, `"slide"`, `"left"`, `"right"`, `"zoom"`, `"pop"`, `"spin"`
+: `void el_transform(el e, int x, int y, int scale, int rotate, int opacity)` | сдвиг, масштаб, поворот и прозрачность сразу, без анимации
+: `int el_animating(el e)` | идёт ли анимация
+: `void el_stop(el e)` | остановить анимацию
+: `int el_every(int ms, el_fn fn, void *arg)` | звать `fn` каждые `ms` миллисекунд; возвращает номер таймера
+: `void el_timer_stop(int id)` | остановить таймер
+
+## Ещё элементы
+
+:= Функция | Что делает
+: `el el_number(el parent, int min, int max, int step, int *value)` | числовое поле со стрелками; значение в `*value`
+: `el el_toolbar(el parent)` | панель инструментов
+: `el el_tool(el toolbar, const char *icon, const char *text, const char *tip)` | кнопка панели: значок из файла, текст, подсказка
+: `void el_icon(el button, const char *path, int size)` | значок кнопки из файла картинки, размер в точках; 0 — 20 точек, как у кнопок панели инструментов
+
+## Готовые окна
+
+:= Функция | Что делает
+: `void el_message(const char *title, const char *text)` | сообщение с кнопкой
+: `void el_ask(const char *title, const char *text, void (*fn)(int yes, void *arg), void *arg)` | вопрос «да» или «нет»; ответ приходит в `fn`
+: `void el_open_file(const char *title, const char *folder, const char *filter, void (*fn)(const char *path, void *arg), void *arg)` | выбор файла для открытия; `filter` — расширения через точку с запятой: `".txt;.c"`, или 0
+: `void el_save_file(const char *title, const char *folder, const char *name, void (*fn)(const char *path, void *arg), void *arg)` | выбор файла для сохранения; `name` — имя по умолчанию
+: `void el_pick_folder(const char *title, const char *folder, void (*fn)(const char *path, void *arg), void *arg)` | выбор папки
+: `void el_toast(const char *text, int ms)` | всплывающая строка на `ms` миллисекунд
+: `el el_dialog(const char *title, int width)` | своё модальное окно; элементы кладут в него
+: `void el_dialog_close(el d)` | закрыть своё окно
+
+Выбранный путь приходит в обработчик строкой UTF-8; если выбор отменён, обработчик не зовётся.
+
+## Клавиши окна
+
+:= Функция | Что делает
+: `int el_hotkey(const char *combo, el_fn fn, void *arg)` | клавиша окна: `"Ctrl+S"`, `"F5"`, `"Esc"`, `"Alt+Z"`
+: `int el_mods(void)` | какие из Shift, Ctrl, Alt зажаты: сумма `EL_SHIFT`, `EL_CTRL`, `EL_ALT`
+
+## Своё рисование
+
+:= Функция | Что делает
+: `el el_paint(el parent, void (*fn)(el e, int w, int h, void *arg), void *arg)` | поверхность для своего рисования; внутри `fn` рисуют функциями `el_g_*`, точка 0, 0 — её угол
+: `void el_redraw(el e)` | перерисовать
+: `int el_mouse(el e, int *x, int *y, int *buttons)` | мышь в точках элемента; 1 — мышь над ним
+: `int el_wheel(el e, int *mods)` | поворот колеса над элементом и зажатые клавиши
+: `void el_g_fill(int x, int y, int w, int h, int rgb)` | залить прямоугольник
+: `void el_g_round(int x, int y, int w, int h, int radius, int rgb)` | залить скруглённый прямоугольник
+: `void el_g_frame(int x, int y, int w, int h, int radius, int rgb, int width)` | обвести скруглённый прямоугольник
+: `void el_g_line(int x0, int y0, int x1, int y1, int rgb, int width)` | линия
+: `void el_g_disc(int cx, int cy, int r, int rgb)` | залитый круг
+: `void el_g_ring(int cx, int cy, int r, int width, int rgb)` | кольцо
+: `void el_g_shade(int x, int y, int w, int h, int rgb, int alpha)` | полупрозрачная заливка
+: `void el_g_text(int x, int y, const char *s, int rgb, int size, int bold)` | текст
+: `int el_g_text_w(const char *s, int size, int bold)` | ширина текста в точках
+: `void el_g_poly(const int *xy, int count, int rgb)` | залить многоугольник: `count` пар `x, y`
+: `void el_g_poly_frame(const int *xy, int count, int rgb, int width)` | обвести многоугольник
+: `void el_g_spline(const int *xy, int count, int rgb, int width)` | гладкая кривая через точки
+: `void el_g_blob(const int *xy, int count, int rgb)` | залить гладкую замкнутую кривую через точки
+: `void el_g_arc(int cx, int cy, int r, int start_deg, int sweep_deg, int rgb, int width)` | дуга окружности: начало и размах в градусах
+
+## Данные элемента
+
+:= Функция | Что делает
+: `void el_data(el e, void *p)` | привязать к элементу свой указатель
+: `void *el_get_data(el e)` | указатель элемента; 0 — не привязан

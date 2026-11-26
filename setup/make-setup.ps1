@@ -17,19 +17,23 @@ $r = & dotnet build "$root\ide\WinCC.csproj" -c Release -nologo -v q 2>&1
 if ($LASTEXITCODE -ne 0) { $r | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }; throw "WinCC.exe не собрался" }
 
 Write-Host "3/4 поставка payload.zip…"
-# что едет в установщик: две программы, библиотеки (runtime, libwui), заголовки, примеры (только исходники),
+# что едет в установщик: две программы, библиотеки (runtime, lib: wui, net, elements), заголовки, примеры (исходники),
 # описание и руководство (его собирает docs\руководство\сборка.py; кнопка «Справка» в окне открывает его)
 $manual = "$root\docs\руководство\Руководство WinCC.pdf"
 if (!(Test-Path $manual)) { throw "нет руководства: соберите его — python docs\руководство\сборка.py" }
 $items = New-Object System.Collections.Generic.List[object]
 foreach ($f in "WinCC.exe", "wcc.exe", "README.md") { $items.Add(@("$root\$f", $f)) }
 $items.Add(@($manual, "Руководство WinCC.pdf"))
+# то же руководство справкой Windows (docs\руководство\сборка chm.py) — если собрано
+$chm = "$root\docs\руководство\Руководство WinCC.chm"
+if (Test-Path $chm) { $items.Add(@($chm, "Руководство WinCC.chm")) }
 foreach ($dir in "runtime", "include", "lib") {
     Get-ChildItem "$root\$dir" -Recurse -File | ForEach-Object {
         $items.Add(@($_.FullName, $_.FullName.Substring($root.Length + 1).Replace('\', '/')))
     }
 }
-Get-ChildItem "$root\examples" -Recurse -File -Include *.c, *.h, *.wccproj | ForEach-Object {
+# примеры: исходники, проекты, шрифты и описания Elements (examples\elements)
+Get-ChildItem "$root\examples" -Recurse -File -Include *.c, *.h, *.wccproj, *.ttf, *.md | ForEach-Object {
     $items.Add(@($_.FullName, $_.FullName.Substring($root.Length + 1).Replace('\', '/')))
 }
 $zipPath = "$setup\payload.zip"

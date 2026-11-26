@@ -54,6 +54,7 @@ namespace WinCC.Documents
             string text = Decode(bytes, out enc);
             var doc = new SourceDocument { Path = System.IO.Path.GetFullPath(path), Encoding = enc };
             doc.Build();
+            doc.Editor.FileFolder = System.IO.Path.GetDirectoryName(doc.Path);
             doc.Editor.Text = NormalizeNewlines(text);
             doc.UpdateHeader();
             return doc;
@@ -90,6 +91,7 @@ namespace WinCC.Documents
                 f.Write(bytes, 0, bytes.Length);
             }
             Path = System.IO.Path.GetFullPath(path);
+            Editor.FileFolder = System.IO.Path.GetDirectoryName(Path);
             IsModified = false;
             UpdateHeader();
         }

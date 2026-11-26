@@ -2,6 +2,7 @@
 // real headers and by WinCC with its own, the two lists must be the same (abi.ps1).
 #include <windows.h>
 #include <commctrl.h>
+#include <shlobj.h>
 #include <stdio.h>
 #include <stddef.h>
 
@@ -28,6 +29,10 @@ int main(void)
     S(CHOOSECOLORA); S(CHOOSECOLORW); S(CHOOSEFONTW); O(CHOOSEFONTW, nSizeMin);
     S(NOTIFYICONDATAA); S(NOTIFYICONDATAW); O(NOTIFYICONDATAW, guidItem); S(SHFILEOPSTRUCTW);
     S(INITCOMMONCONTROLSEX); S(GUID);
+    S(BROWSEINFOA); S(BROWSEINFOW); O(BROWSEINFOW, ulFlags); O(BROWSEINFOW, lpfn); O(BROWSEINFOW, iImage);
+    S(SHITEMID); S(ITEMIDLIST); S(NCCALCSIZE_PARAMS); O(NCCALCSIZE_PARAMS, lppos);
+    printf("%-28s %4d\n", "QS_ALLINPUT", (int)QS_ALLINPUT);
+    printf("%-28s %4d\n", "DPI_CTX_PM_V2", (int)(INT_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     S(WPARAM); S(LPARAM); S(LRESULT); S(DWORD); S(LONG); S(BOOL); S(WCHAR); S(HANDLE); S(SIZE_T);
     printf("%-28s %4d\n", "MAKEINTRESOURCE", (int)(ULONG_PTR)MAKEINTRESOURCEA(32512));
     printf("%-28s %4d\n", "HKCU low", (int)(DWORD)(ULONG_PTR)HKEY_CURRENT_USER);

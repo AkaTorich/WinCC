@@ -51,6 +51,7 @@ namespace WinCC.Editor
             SyntaxColors.Changed += OnColorsChanged;
             Unloaded += (s, e) => SyntaxColors.Changed -= OnColorsChanged;
             Loaded += (s, e) => { SyntaxColors.Changed -= OnColorsChanged; SyntaxColors.Changed += OnColorsChanged; Redraw(); };
+            InitCompletion();
         }
 
         internal TextBox TextBox { get { return Box; } }
@@ -234,6 +235,7 @@ namespace WinCC.Editor
             warningLines.Clear();
             RequestRedraw();
             TextEdited?.Invoke(this, EventArgs.Empty);
+            CompletionAfterEdit();
         }
 
         void OnSelectionChanged(object sender, RoutedEventArgs e)
@@ -245,6 +247,7 @@ namespace WinCC.Editor
                 RequestRedraw();
             }
             CaretMoved?.Invoke(this, EventArgs.Empty);
+            CompletionAfterCaret();
         }
 
         void Reparse()
@@ -320,6 +323,7 @@ namespace WinCC.Editor
 
         void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (CompletionKey(e)) return;
             if (e.Key == Key.Tab && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) == 0)
             {
                 bool back = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
@@ -345,6 +349,7 @@ namespace WinCC.Editor
 
         void OnPreviewTextInput(object sender, TextCompositionEventArgs e)
         {
+            CompletionTextInput(e);
             if (e.Text != "}" || Box.SelectionLength > 0) return;
             int line = FindLine(Box.CaretIndex);
             int start = lineStarts[line];

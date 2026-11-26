@@ -63,7 +63,8 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 | `include\windows.h`, `include\win\*.h` | Windows: типы, структуры, константы, функции kernel32, user32, gdi32, comdlg32, shell32, advapi32; `except.h` — исключения (`EXCEPTION_*`, `CONTEXT`, `RaiseException`) |
 | `include\threads.h stdatomic.h complex.h fenv.h tgmath.h` | C11 и математика: потоки, атомарные, комплексные (как у Microsoft), окружение плавающей точки, `_Generic`-обёртки |
 | `include\io.h fcntl.h direct.h process.h conio.h malloc.h intrin.h sal.h sys\stat.h sys\types.h` | заголовки Microsoft C: дескрипторы, папки, потоки и программы, консоль, `_alloca`, интринсики (макросы с `asm`), пометки SAL (пустые) |
-| `include\windowsx.h tchar.h commctrl.h mmsystem.h commdlg.h shellapi.h` | остальное привычное |
+| `include\windowsx.h tchar.h commctrl.h mmsystem.h commdlg.h shellapi.h shlobj.h` | остальное привычное; `shlobj.h` — выбор папки (`SHBrowseForFolder`, `SHGetPathFromIDList`, `BROWSEINFO`), идентификаторы оболочки, `CoTaskMemFree` (всё в `win\shell32.h`); в `user32.h` ещё `NCCALCSIZE_PARAMS`, `WMSZ_*`, `SetLayeredWindowAttributes`, `MsgWaitForMultipleObjects(Ex)` с `QS_*`/`MWMO_*`, `SetProcessDpiAwarenessContext` |
+| Microsoft C с именами UTF-16 | `_wfopen`, `_wfreopen`, `_wremove`, `_wrename` (`runtime\winfile.c`), `_wgetenv` (`winhost.c`), `_snwprintf` / `_vsnwprintf` по правилам Microsoft: `%s` — широкая строка, `%S` — узкая, без NUL, если текст занял весь буфер, -1 при обрезке (`runtime.c`) |
 | `include\win\resource.h`, `include\winres.h winresrc.h winver.h` | ресурсы из программы: `FindResource`, `LoadResource`, `LoadString`, `LoadMenu`, `LoadAccelerators`, `CreateDialogParam`, `DialogBoxParam`, `LoadBitmap`, перечисление и замена ресурсов, версия (`GetFileVersionInfo`, `VerQueryValue` — `version.dll`); числа `.rc` (`VS_VERSION_INFO`, `VOS_*`, `VFT_*`, `IDC_STATIC`) |
 | `include\winsock2.h ws2tcpip.h winhttp.h` (+ `winsock.h`, `ws2ipdef.h` — ведут в `winsock2.h`) | сокеты `ws2_32` (TCP, UDP, IPv4 и IPv6, select, WSAPoll, события в окно и в объект, getaddrinfo, inet_pton) и HTTP/HTTPS `winhttp` (запросы, заголовки, прокси, тайм-ауты, WebSocket). 100 функций, все сверены с экспортами DLL; каждое число и размер структуры — с MSVC (`tests\winabi\abi.ps1`) |
 | `include\net.h` | библиотека сети — всё, что зовёт программа (раздел «Сеть») |
@@ -79,7 +80,7 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 | `tests\` | тесты: `run.ps1` собирает каждый `tests\*.c` в настоящий .exe и запускает; `win_api.c` — Windows API; `win_wui.c` — WUI; `win_net.c` — сеть без интернета (программа сама себе сервер: HTTP, TCP, UDP, медленный клиент); `pp_c11.c` — препроцессор и запись чисел; `c11_lang.c` — язык C11 и Microsoft C (VLA, `_Generic`, `__try`…); `win_lib.c` — новые заголовки библиотеки; `wui\click.ps1` — WUI мышью и клавишами (сообщения окну, снимок после каждого шага); `winabi\abi.ps1` — заголовки против настоящих (MSVC): `sizes.c` — windows.h, `net.c` — структуры сети, `consts.c` делается сам из каждого числа `#define` заголовков сети, `bits.c` — какие байты и биты занимает каждое битовое поле в 27 разных структурах; `snap.ps1` — снимок окна программы |
 | `compiler\host.c`, `build-cctest.cmd` | cctest — проверка того же компилятора в режиме DynastyOS |
 | `ide\` | окно WinCC.exe (раздел ниже) |
-| `docs\руководство\` | **Руководство WinCC** — книга для тех, кто пишет на WinCC (раздел «Руководство» ниже) |
+| `docs\руководство\` | **Руководство WinCC** — книга для тех, кто пишет на WinCC: главы текстом в `главы\`, `python сборка.py` собирает PDF, `python "сборка chm.py"` — справку Windows `Руководство WinCC.chm` (нужен HTML Help Workshop), `python "проверка примеров.py"` собирает все примеры книги |
 
 **Кириллица.** Исходники — UTF-8. В каждом `.exe` есть манифест: кодовая страница программы — UTF-8, поэтому
 `MessageBoxA`, `CreateWindowExA`, `SetWindowTextA` и другие A-функции берут текст программы как есть. GDI манифест
@@ -94,7 +95,7 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 - `compiler\build-cctest.cmd` — cctest для режима DynastyOS.
 - **Установщик:** `powershell -ExecutionPolicy Bypass -File setup\make-setup.ps1` — собирает `wcc.exe` и `WinCC.exe`,
   кладёт поставку в `setup\payload.zip` (обе программы, `runtime\`, `include\`, `lib\`, исходники `examples\`, README,
-  «Руководство WinCC.pdf» — без него установщик не собирается), собирает `WinCCSetup.exe` в корень и копию — на рабочий стол.
+  «Руководство WinCC.pdf» — без него установщик не собирается, и «Руководство WinCC.chm», если собрано), собирает `WinCCSetup.exe` в корень и копию — на рабочий стол.
   Установщик говорит по-английски и по-русски (список рядом с «Удалить WinCC»; в командной строке `/lang=en|ru`) и передаёт
   выбранный язык окну WinCC — `setup\Loc.cs`.
 
@@ -116,6 +117,36 @@ wcc main.c моя.lib -I папка      программа с ней: в про
   `cc_utc_seconds`, `cc_utc_offset`).
 - `mbrtowc`/`mbtowc` не дают символ за U+FFFF (он не помещается в один `wchar_t`); строки целиком (`mbstowcs`,
   `%ls`, `fputws`, `fgetwc`…) пары UTF-16 понимают.
+
+## Библиотека окон: `elements.h` (Elements)
+
+Elements — нативная библиотека окон на Си в духе WPF на GDI+ (проект `Code\Libraries\Elements`), встроена в WinCC,
+как WUI: `#include <elements.h>` — и wcc сам собирает с программой `lib\elements`, выбрасывая то, что программа не
+зовёт; программа получается оконной даже с `main`. Больше ничего не нужно: ни `.lib`, ни `-I`.
+
+```c
+#include <elements.h>
+char name[64] = "World";
+int main(void) {
+    el w = el_window("Привет", 420, 230);
+    el s = el_stack(w, 0);
+    el_edit(s, name, sizeof(name));
+    el_button(s, "Поздороваться");
+    el_run();
+}
+```
+
+| Где | Что |
+|---|---|
+| `include\elements.h` | её заголовок и `#pragma comment(lib, "elements")` с `/SUBSYSTEM:WINDOWS` (под `__WINCC__`) |
+| `lib\elements\` | её исходники (`el_*.c`, `el_internal.h`, `el_gdip.h` — GDI+ для Си) |
+| `examples\elements\demos\` | её 11 примеров, у каждого свой `.wccproj`: hello, form, cyberpunk, design, curves, effects, shaped, custom_window, triangle, fonts, fontshow |
+| `examples\elements\fonts\` | её 30 шрифтов (примеры шрифтов ищут их в `..\fonts` рядом с `.exe`) |
+| `examples\elements\README.md`, `DOCUMENTATION.md` | её описание и все функции |
+| `tools\sync-elements.ps1` | берёт свежую Elements из `..\Libraries\Elements` (её не меняет) и раскладывает по этим местам |
+
+Что для неё добавилось в WinCC: `shlobj.h`, добавки `user32.h` выше, `_wfopen`, `_wgetenv`, `_snwprintf`.
+После правок в самой Elements: `powershell -ExecutionPolicy Bypass -File tools\sync-elements.ps1`.
 
 ## Оформление окон: `wui.h`
 
@@ -309,7 +340,7 @@ C# 7.3, WPF, .NET Framework 4.8, без NuGet; библиотека ThemeLibrary
   Клавиши: Ctrl+N новый, Ctrl+O открыть, Ctrl+S сохранить, Ctrl+Shift+S сохранить как, Ctrl+W закрыть вкладку,
   F7 или Ctrl+B собрать, F5 отладка, Ctrl+F5 запустить без отладчика, F9 точка останова, F10 / F11 / Shift+F11 шаги,
   Shift+F5 остановить отладку, F1 — руководство (кнопка с книгой справа на панели),
-  Ctrl+Shift+E — показать / спрятать панель проекта (кнопка «Проект» слева на панели кнопок).
+  Ctrl+Shift+E — показать / спрятать панель проекта (кнопка «Проект» слева на панели кнопок), Ctrl+Пробел — подсказки ввода.
 - Проект — файл `имя.wccproj` (`ide\Projects\Project.cs`): текст UTF-8, строки `ключ=значение`, пути от папки проекта:
   `kind=` Console / Window / Dll / Library, `config=` Debug / Release, `output=` имя готового файла (нет — имя проекта),
   `file=` файл проекта (по строке на файл, в порядке сборки), `define=` макрос (`-D`), `include=` папка `#include` (`-I`),
@@ -336,6 +367,13 @@ C# 7.3, WPF, .NET Framework 4.8, без NuGet; библиотека ThemeLibrary
   один открытый файл — `Documents\SourceDocument.cs`: читает UTF-8 (с BOM и без), UTF-16 и 1251, сохраняет в той же кодировке, строки CRLF.
 - Редактор — `Editor\CodeEditor.xaml(.cs)`: обычное поле ввода с прозрачными буквами (правка, выделение, отмена — его),
   Tab/Shift+Tab — отступ строк, Enter повторяет отступ (после `{` — глубже), `}` сдвигает строку назад, Ctrl+колесо — размер букв.
+  - подсказки ввода — `Editor\CodeEditor.Completion.cs`: после N букв имени (настройки окна: 1–4 или только Ctrl+Пробел)
+    список под кареткой; стрелки, Enter/Tab — вставить, Esc; после `имя(` над строкой — объявление функции.
+    Имена — `Editor\Completion\Symbols.cs`: разбор объявлений (функции с параметрами, `#define`, `typedef`, `enum`,
+    глобальные переменные) из подключённых заголовков — встроенных в wcc (текст `compiler\headers.c` вшит в WinCC.exe),
+    `include\` и своих «"…"» рядом с файлом, с вложенными `#include`; из этого и других открытых файлов; слова Си.
+    Окошко — `Editor\Completion\CompletionPopup.cs`. Проверка без окна:
+    `WinCC.exe --completetest отчёт.txt файл.c начало…`; снимок со списком: `--window снимок.png complete:файл.c:строка:столбец`.
   - подсветка: разбор Си по строкам — `Editor\CLexer.cs` (ключевые слова, типы, константы, строки и символы, комментарии
     вместе с многострочными, числа, препроцессор и продолжение директивы через `\`); рисует видимые строки поверх поля — `Editor\HighlightLayer.cs`;
   - цвета берутся из темы (акцент, второй акцент, «предупреждение», «опасность», приглушённый текст) и меняются вместе с ней; вызовы функций — ярко-зелёные (`#00E640`), объявления и определения функций и макросы с параметрами — фиолетовые (`#B06CFF`): имя перед `(`, а перед ним тип, `static`/`extern`…, `*` после типа, начало строки без отступа или `#define` — `Editor\SyntaxColors.cs`, `Editor\CLexer.cs`;

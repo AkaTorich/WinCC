@@ -174,6 +174,10 @@ static const Header g_headers[] = {
       "int swprintf(wchar_t *ws, size_t n, const wchar_t *fmt, ...);\n"
       "int vwprintf(const wchar_t *fmt, va_list ap);\nint vfwprintf(FILE *f, const wchar_t *fmt, va_list ap);\n"
       "int vswprintf(wchar_t *ws, size_t n, const wchar_t *fmt, va_list ap);\n"
+      "#ifdef _WIN32\n"     // Microsoft's: %s is wide, %S narrow; no NUL when the text fills n; -1 when cut
+      "int _snwprintf(wchar_t *ws, size_t n, const wchar_t *fmt, ...);\n"
+      "int _vsnwprintf(wchar_t *ws, size_t n, const wchar_t *fmt, va_list ap);\n"
+      "#endif\n"
       "int wscanf(const wchar_t *fmt, ...);\nint fwscanf(FILE *f, const wchar_t *fmt, ...);\n"
       "int swscanf(const wchar_t *s, const wchar_t *fmt, ...);\n"
       "int vwscanf(const wchar_t *fmt, va_list ap);\nint vfwscanf(FILE *f, const wchar_t *fmt, va_list ap);\n"
@@ -314,7 +318,13 @@ static const Header g_headers[] = {
       "int setvbuf(FILE *f, char *buf, int mode, size_t size);\nvoid setbuf(FILE *f, char *buf);\n"
       "FILE *tmpfile(void);\nchar *tmpnam(char *buf);\n"
       "int remove(const char *name);\nint rename(const char *from, const char *to);\n"
-      "void perror(const char *s);\n" },
+      "void perror(const char *s);\n"
+      "#ifdef _WIN32\n"     // Microsoft's: names in UTF-16 (runtime\winfile.c)
+      "#ifndef __WCHAR_T_DEFINED\n#define __WCHAR_T_DEFINED\ntypedef unsigned short wchar_t;\n#endif\n"
+      "FILE *_wfopen(const wchar_t *name, const wchar_t *mode);\n"
+      "FILE *_wfreopen(const wchar_t *name, const wchar_t *mode, FILE *f);\n"
+      "int _wremove(const wchar_t *name);\nint _wrename(const wchar_t *from, const wchar_t *to);\n"
+      "#endif\n" },
     { "stdlib.h",
       "#pragma once\n"
       "#define EXIT_SUCCESS 0\n#define EXIT_FAILURE 1\n#define RAND_MAX 32767\n#define MB_CUR_MAX 4\n"
@@ -346,7 +356,8 @@ static const Header g_headers[] = {
       "              int (*cmp)(const void *, const void *));\n"
       "void exit(int status);\nvoid _Exit(int status);\nvoid abort(void);\n"
       "int atexit(void (*fn)(void));\nint at_quick_exit(void (*fn)(void));\nvoid quick_exit(int status);\n"
-      "char *getenv(const char *name);\nint system(const char *cmd);\n" },
+      "char *getenv(const char *name);\nint system(const char *cmd);\n"
+      "#ifdef _WIN32\nwchar_t *_wgetenv(const wchar_t *name);\n#endif\n" },     // UTF-16 (runtime\winhost.c)
     { "string.h",
       "#pragma once\n"
       "#ifdef _WIN32\n"     // Microsoft's names of the same functions

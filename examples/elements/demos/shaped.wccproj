@@ -1,0 +1,4 @@
+# Elements: пример shaped.c
+kind=Window
+config=Debug
+file=shaped.c

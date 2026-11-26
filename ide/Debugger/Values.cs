@@ -155,7 +155,25 @@ namespace WinCC.Debugger
                         node.Value = Pointer(t, p);
                         var el = t.Element;
                         if (p != 0 && el != null && el.Kind != DbgTypeKind.Void && el.Kind != DbgTypeKind.Function && el.Kind != DbgTypeKind.Unknown)
-                            node.Children = () => new List<VarNode> { At("*" + name, el, p, "*" + path) };
+                        {
+                            if (el.Kind == DbgTypeKind.Struct || el.Kind == DbgTypeKind.Array)
+                            {
+                                // указатель на структуру раскрывается сразу в её поля; читается только по раскрытию —
+                                // иначе список из узлов (next → next → …) читался бы без конца
+                                node.Children = () =>
+                                {
+                                    var target = At("*" + name, el, p, "*" + path);
+                                    return target.Children != null ? target.Children() : new List<VarNode> { target };
+                                };
+                            }
+                            else
+                            {
+                                // указатель на числа — как массив: [0], [1]… по PointerPage штук, дальше — узел следующей страницы
+                                if (el.Kind != DbgTypeKind.Char && el.Kind != DbgTypeKind.UChar && el.Kind != DbgTypeKind.Pointer)
+                                    node.Value += " → " + At("", el, p, "").Value;
+                                node.Children = () => PointerElements(el, p, path, 0);
+                            }
+                        }
                         break;
                     }
                 case DbgTypeKind.Function:
@@ -166,6 +184,32 @@ namespace WinCC.Debugger
                     break;
             }
             return node;
+        }
+
+        const int PointerPage = 10;
+
+        /// <summary>Элементы, на которые смотрит указатель: [from]…[from+9]; длины указатель не знает, поэтому дальше — по раскрытию.</summary>
+        List<VarNode> PointerElements(DbgType el, ulong p, string path, int from)
+        {
+            var list = new List<VarNode>();
+            int esz = Math.Max(1, el.SizeIn(info));
+            for (int i = from; i < from + PointerPage; i++)
+            {
+                ulong a = p + (ulong)((long)i * esz);
+                if (engine.Read(a, esz) == null) return list;       // память кончилась — дальше не читать
+                list.Add(At("[" + i + "]", el, a, path + "[" + i + "]"));
+            }
+            int next = from + PointerPage;
+            if (next < MaxElements)
+                list.Add(new VarNode
+                {
+                    Name = "[" + next + "…" + (next + PointerPage - 1) + "]",
+                    Value = "",
+                    TypeName = "",
+                    Path = path + "[" + next + "…]",
+                    Children = () => PointerElements(el, p, path, next)
+                });
+            return list;
         }
 
         string Pointer(DbgType t, ulong p)

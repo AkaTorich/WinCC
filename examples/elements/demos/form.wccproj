@@ -1,0 +1,4 @@
+# Elements: пример form.c
+kind=Window
+config=Debug
+file=form.c

@@ -1,0 +1,4 @@
+# Elements: пример effects.c
+kind=Window
+config=Debug
+file=effects.c
