@@ -2430,6 +2430,11 @@ static void emit_text(Obj *prog)
             println("  xor eax, eax");
         dbg_loc(fn->body->rbrace);      // every return passes the closing brace
         println(".L.return.%s:", fn->name);
+        // an entry declared void (void main, void WinMain): the program's code is 0, not what eax held
+        if (!fn->is_static && fn->ty->return_ty && fn->ty->return_ty->kind == TY_VOID &&
+            (cc_streq(fn->name, "main") || cc_streq(fn->name, "wmain") || cc_streq(fn->name, "WinMain") ||
+             cc_streq(fn->name, "wWinMain")))
+            println("  xor eax, eax");
         println("  mov rsp, rbp");
         if (fn->save_pad)
             println("  add rsp, 8");

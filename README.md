@@ -34,8 +34,8 @@ wcc main.c mylib.lib -I inc      a program that takes it: only the functions it 
 -g                               debug info for the WinCC debugger next to the program (prog.wdbg)
 -O0                              no register variables: every variable in memory (for debugging)
 --manifest                       WinCC's manifest: A-functions take UTF-8, modern controls (also #pragma comment(linker, "/MANIFEST"))
---tiny                           sections and the file aligned by 16 bytes, not 4096/512 (the file maps as one piece;
-                                 zero-initialized globals are stored in the file)
+--tiny                           sections and the file aligned by 16 bytes, not 4096/512, when that makes the file smaller
+                                 (the file maps as one piece; zero-initialized globals are stored in it); IDE: always on
 ```
 
 Errors are printed as `file:line: text` (messages are in Russian); warnings (`#warning`, an unknown `\x` escape in a
@@ -436,6 +436,7 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
 **Build modes** (the list on the toolbar; a project keeps its own in `config=`): **Debug** — `wcc -g -O0`: debug info
 next to the program (`prog.wdbg`), every variable in memory; **Release** — optimized code, no debug info (an old `.wdbg`
 is deleted). F5 in Release builds with `-g`: the debugger then also shows variables kept in registers.
+Both modes add `--tiny` (the 16-byte layout, only when it makes the file smaller).
 
 **Debugger** (`ide\Debugger\`, `MainWindow.Debug.cs`):
 - F9 or a click left of the line numbers — a breakpoint (red dot); breakpoints follow the text when lines are added or

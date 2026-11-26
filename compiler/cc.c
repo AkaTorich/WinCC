@@ -409,6 +409,24 @@ int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget 
     if (asm_text)
         *asm_text = all;
     // not a tail call: an assembler error comes back to cc_setjmp above, so this frame must still be here
+    if (t->tiny && t->exe) {
+        // --tiny: the 16-byte layout only when it is smaller (zeros of .bss lie in such a file,
+        // so a program with big zero-filled arrays is smaller the usual way); a DLL stays as usual
+        u8 *small;
+        u64 small_size;
+        volatile int ok = cc_assemble_win(all, t, &small, &small_size);
+        char *small_dbg = cc_win_debug_text;
+        t->tiny = 0;
+        if (ok)
+            ok = cc_assemble_win(all, t, out, out_size);
+        t->tiny = 1;
+        if (ok && small_size < *out_size) {
+            *out = small;
+            *out_size = small_size;
+            cc_win_debug_text = small_dbg;
+        }
+        return ok;
+    }
     volatile int ok = cc_assemble_win(all, t, out, out_size);
     return ok;
 }
