@@ -40,7 +40,7 @@ Errors are printed as `file:line: text` (messages are in Russian); warnings (`#w
 string) as `file:line: предупреждение: text` and do not stop the build. An assembler error inside an `asm()` insert names
 the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 1251 — wcc converts it to UTF-8 itself
 (`wcc.c`, `read_text`). `#include <x.h>` searches `-I` and `include` first, the current folder last. Version:
-`wcc --version` (1.4.0; the same for the editor and the installer).
+`wcc --version` (1.5.0; the same for the editor and the installer).
 
 ## What is where
 

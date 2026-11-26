@@ -15,7 +15,7 @@
     <ApplicationIcon>..\ide\icon.ico</ApplicationIcon>
     <AssemblyTitle>WinCC Setup — C compiler for Windows</AssemblyTitle>
     <Product>WinCC Setup</Product>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Company>О. Кобенко</Company>
   </PropertyGroup>
 
