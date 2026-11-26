@@ -15,7 +15,7 @@
     <ApplicationIcon>..\ide\icon.ico</ApplicationIcon>
     <AssemblyTitle>Установка WinCC — компилятора Си для Windows</AssemblyTitle>
     <Product>WinCC Setup</Product>
-    <Version>1.3.0</Version>
+    <Version>1.3.1</Version>
     <Company>О. Кобенко</Company>
   </PropertyGroup>
 

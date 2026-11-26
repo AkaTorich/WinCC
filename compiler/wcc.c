@@ -13,7 +13,7 @@
 #include "cc.h"
 #include "winlink.h"
 
-#define WCC_VERSION "1.3.0"
+#define WCC_VERSION "1.3.1"
 
 // ---- the compiler's host hooks ----
 
