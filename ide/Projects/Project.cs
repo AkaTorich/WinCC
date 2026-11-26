@@ -117,6 +117,41 @@ namespace WinCC.Projects
             return true;
         }
 
+        /// <summary>Убрать из проекта все файлы папки и её вложенных папок (файлы на диске остаются). Число убранных.</summary>
+        public int RemoveFolder(string folderFullPath)
+        {
+            string prefix = System.IO.Path.GetFullPath(folderFullPath).TrimEnd('\\') + "\\";
+            return Files.RemoveAll(f => FullPath(f).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>Папки, в которые поиск файлов не заходит: сборка, служебные папки git и студий.</summary>
+        static readonly string[] skippedFolders = { "bin", "obj", ".git", ".vs", "node_modules" };
+
+        /// <summary>Что берётся из папки в проект: код, заголовки, ассемблер, ресурсы и их картинки.</summary>
+        static readonly string[] folderExtensions = { ".c", ".h", ".asm", ".rc", ".res", ".ico", ".cur", ".bmp" };
+
+        /// <summary>Файлы проекта в папке и всех вложенных папках (кроме служебных), по порядку: сначала свои, потом вложенные.</summary>
+        public static List<string> ScanFolder(string folder)
+        {
+            var result = new List<string>();
+            try
+            {
+                result.AddRange(Directory.GetFiles(folder)
+                    .Where(f => folderExtensions.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()))
+                    .OrderBy(f => System.IO.Path.GetFileName(f).Equals("main.c", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                    .ThenBy(f => System.IO.Path.GetFileName(f), StringComparer.OrdinalIgnoreCase));
+                foreach (string sub in Directory.GetDirectories(folder).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+                {
+                    string name = System.IO.Path.GetFileName(sub);
+                    if (skippedFolders.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
+                    if ((new DirectoryInfo(sub).Attributes & FileAttributes.Hidden) != 0) continue;
+                    result.AddRange(ScanFolder(sub));
+                }
+            }
+            catch (Exception) { }
+            return result;
+        }
+
         /// <summary>Параметры wcc: файлы по порядку, -o, вид, макросы, папки, DLL, стек, остальное.</summary>
         public string Arguments()
         {

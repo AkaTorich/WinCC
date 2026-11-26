@@ -11,33 +11,44 @@ namespace WinCC.Setup
 {
     public partial class SetupWindow : ThemedWindow
     {
-        private bool _busy, _finished;
+        private bool _busy, _finished, _update;
         private string _installedExe;
 
         public SetupWindow(bool uninstallMode)
         {
             InitializeComponent();
             Logo.Source = LargestIcon();
-            VersionText.Text = "версия " + Installer.Version;
+
+            LanguageBox.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "English", Tag = false });
+            LanguageBox.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "Русский", Tag = true });
+            LanguageBox.SelectedIndex = Loc.Russian ? 1 : 0;
+            LanguageBox.SelectionChanged += delegate
+            {
+                var item = LanguageBox.SelectedItem as System.Windows.Controls.ComboBoxItem;
+                if (item == null) return;
+                Loc.Apply((bool)item.Tag);
+                RefreshTexts();
+            };
 
             string installed = Installer.InstalledFolder();
-            FolderBox.Text = string.IsNullOrEmpty(installed) ? Installer.DefaultFolder : installed;
-            if (!string.IsNullOrEmpty(installed))
-            {
-                InstalledText.Text = "Сейчас установлена версия " + (Installer.InstalledVersion() ?? "?") + " — она будет обновлена.";
-                InstallText.Text = "Обновить";
-            }
-            else
-            {
-                InstalledText.Text = "Ставится только для вас, права администратора не нужны.";
-                UninstallButton.Visibility = Visibility.Collapsed;
-            }
+            _update = !string.IsNullOrEmpty(installed);
+            FolderBox.Text = _update ? installed : Installer.DefaultFolder;
+            if (!_update) UninstallButton.Visibility = Visibility.Collapsed;
+            RefreshTexts();
 
             if (!Installer.PayloadOk())
-                ShowDone(false, "Установщик повреждён", "Внутри не нашлись файлы программы. Скачайте установщик заново.");
+                ShowDone(false, Loc.T("Damaged"), Loc.T("DamagedText"));
 
             if (uninstallMode)
                 Dispatcher.BeginInvoke(new Action(delegate { Uninstall_Click(null, null); }), DispatcherPriority.Background);
+        }
+
+        // надписи первой страницы, которые ставит код (на выбранном языке)
+        private void RefreshTexts()
+        {
+            VersionText.Text = Loc.F("Version", Installer.Version);
+            InstalledText.Text = _update ? Loc.F("InstalledUpdate", Installer.InstalledVersion() ?? "?") : Loc.T("ForYou");
+            InstallText.Text = Loc.T(_update ? "Update" : "Install");
         }
 
         // самый крупный кадр значка программы
@@ -59,7 +70,7 @@ namespace WinCC.Setup
 
         private void Browse_Click(object sender, RoutedEventArgs e)
         {
-            string path = FolderBrowser.Pick(this, "Куда установить WinCC", FolderBox.Text);
+            string path = FolderBrowser.Pick(this, Loc.T("PickFolder"), FolderBox.Text);
             if (string.IsNullOrWhiteSpace(path)) return;
             // в выбранной папке — своя папка WinCC, если это не она сама
             if (!string.Equals(Path.GetFileName(path.TrimEnd('\\')), "WinCC", StringComparison.OrdinalIgnoreCase))
@@ -86,11 +97,11 @@ namespace WinCC.Setup
             };
             bool launch = LaunchBox.IsChecked == true;
             _installedExe = Path.Combine(opt.Folder, Installer.ExeName);
-            ShowProgress("Установка WinCC…");
-            Run(delegate { Installer.Install(opt, Step, Fraction); }, delegate
+            ShowProgress(Loc.T("InstallingWinCC"));
+            Run(delegate { Installer.Install(opt, Step, Fraction); Loc.SaveIdeLanguage(); }, delegate
             {
-                ShowDone(true, "WinCC установлен",
-                         "Папка: " + opt.Folder + (opt.AddToPath ? "\nКоманда wcc работает в новых окнах консоли." : ""));
+                ShowDone(true, Loc.T("Installed"),
+                         Loc.F("FolderLine", opt.Folder) + (opt.AddToPath ? "\n" + Loc.T("WccNewConsoles") : ""));
                 if (launch) Launch();
             });
         }
@@ -98,13 +109,13 @@ namespace WinCC.Setup
         private void Uninstall_Click(object sender, RoutedEventArgs e)
         {
             if (_busy) return;
-            if (ThemedMessageBox.Show(this, "Удалить WinCC? Уйдут только его собственные файлы; ваши файлы, даже в папке WinCC, останутся.",
-                                      "Удаление", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (ThemedMessageBox.Show(this, Loc.T("UninstallAsk"),
+                                      Loc.T("UninstallTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                 return;
-            ShowProgress("Удаление WinCC…");
+            ShowProgress(Loc.T("Uninstalling"));
             Run(delegate { Installer.Uninstall(Step); }, delegate
             {
-                ShowDone(true, "WinCC удалён", "Ушли только файлы самого WinCC; ваши файлы не тронуты.");
+                ShowDone(true, Loc.T("Uninstalled"), Loc.T("UninstalledText"));
             });
         }
 
@@ -135,6 +146,7 @@ namespace WinCC.Setup
             PageOptions.Visibility = Visibility.Collapsed;
             PageDone.Visibility = Visibility.Collapsed;
             PageProgress.Visibility = Visibility.Visible;
+            LanguagePanel.Visibility = Visibility.Collapsed;
             InstallButton.IsEnabled = false;
             CloseButton.IsEnabled = false;
             UninstallButton.IsEnabled = false;
@@ -152,18 +164,19 @@ namespace WinCC.Setup
             PageProgress.Visibility = Visibility.Collapsed;
             PageDone.Visibility = Visibility.Visible;
             UninstallButton.Visibility = Visibility.Collapsed;
+            LanguagePanel.Visibility = Visibility.Collapsed;
             CloseButton.IsEnabled = true;
             if (ok)
             {
                 CloseButton.Visibility = Visibility.Collapsed;
                 InstallButton.IsEnabled = true;
                 InstallIcon.Kind = IconKind.Check;
-                InstallText.Text = "Готово";
+                InstallText.Text = Loc.T("Done");
             }
             else
             {
                 InstallButton.Visibility = Visibility.Collapsed;
-                CloseButton.Content = "Закрыть";
+                CloseButton.Content = Loc.T("Close");
             }
         }
 
@@ -177,7 +190,7 @@ namespace WinCC.Setup
                 Dispatcher.BeginInvoke(new Action(delegate
                 {
                     if (error == null) done();
-                    else ShowDone(false, "Не получилось", error);
+                    else ShowDone(false, Loc.T("Failed"), error);
                 }));
             });
             t.IsBackground = true;
@@ -199,8 +212,8 @@ namespace WinCC.Setup
 
         public void Snapshot(string png, string page)
         {
-            if (page == "ход") { ShowProgress("Установка WinCC…"); Progress.Value = 0.62; StepText.Text = "Распаковка файлов…"; }
-            else if (page == "готово") ShowDone(true, "WinCC установлен", "Папка: " + Installer.DefaultFolder + "\nКоманда wcc работает в новых окнах консоли.");
+            if (page == "ход") { ShowProgress(Loc.T("InstallingWinCC")); Progress.Value = 0.62; StepText.Text = Loc.T("Unpacking"); }
+            else if (page == "готово") ShowDone(true, Loc.T("Installed"), Loc.F("FolderLine", Installer.DefaultFolder) + "\n" + Loc.T("WccNewConsoles"));
             UpdateLayout();
             var dpi = VisualTreeHelper.GetDpi(this);
             var bmp = new RenderTargetBitmap((int)(ActualWidth * dpi.DpiScaleX), (int)(ActualHeight * dpi.DpiScaleY),

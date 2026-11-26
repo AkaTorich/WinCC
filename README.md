@@ -14,7 +14,8 @@ into it, and only what the program actually calls ends up inside (hello.exe is a
 
 Download the installer from [Releases](https://github.com/AkaTorich/WinCC/releases): it installs into
 `%LOCALAPPDATA%\Programs\WinCC`, adds `wcc` to `PATH`, creates shortcuts and "Open with" for `.c`/`.h`, and ships
-the manual (in Russian) as a PDF. A Russian version of this file is [README.ru.md](README.ru.md).
+the manual (in Russian) as a PDF. The installer speaks English and Russian (the list next to "Uninstall"; `/lang=en|ru`
+on the command line) and passes the chosen language on to the editor — `setup\Loc.cs`. A Russian version of this file is [README.ru.md](README.ru.md).
 
 ## Command line
 
@@ -299,14 +300,19 @@ The icon is drawn by `ide\tools\make-icon.ps1` (Windows PowerShell 5.1) into `id
   Sample projects: `examples\calc\Калькулятор.wccproj`, `examples\wui\Показ WUI.wccproj`.
 - The project side panel — `ide\Projects\ProjectPanel.xaml(.cs)`: project name, files grouped as Sources / Headers /
   Resources / Other (icons, images and `.res` open in their Windows program, not in the editor), the front tab's file in
-  bold, a missing file gets a warning icon; at the bottom — the program kind and output name. Double-click or Enter —
-  open, Delete — remove from the project (the file stays on disk), right click — open, remove, show in folder; files
-  dropped onto the panel join the project, a dropped `.wccproj` is opened. Buttons on top: add files, new file in the
-  project, properties, close project. Without a project: "New project…", "Open project…" and recent projects (up to 8).
+  bold, a missing file gets a warning icon; at the bottom — the program kind and output name. Inside each group, files in
+  subfolders sit under their folders (`src\util\str.c` → src › util › str.c); a file outside the project folder sits
+  under its full folder path. Double-click or Enter —
+  open, Delete — remove from the project (the file stays on disk), right click — open, remove, show in folder; on a
+  folder: Delete or right click — remove the whole folder from the project, show in folder. Files and folders dropped
+  onto the panel join the project (a folder with all its subfolders), a dropped `.wccproj` is opened. Buttons on top:
+  add files, add folder, new file in the project, properties, close project. A folder brings in its `.c`, `.h`, `.asm`,
+  `.rc`, `.res`, `.ico`, `.cur`, `.bmp` files, skipping `bin`, `obj`, `.git`, `.vs`, `node_modules` and hidden folders
+  (`Project.ScanFolder`). Without a project: "New project…", "Open project…" and recent projects (up to 8).
 - Project properties — `ide\Projects\ProjectDialog.cs`: kind, output file, macros, `#include` folders, DLLs (lists
   separated by `;`), stack, other arguments.
 - New, open, close project, add and remove files, recent projects — `MainWindow.Project.cs`. A new project in a folder
-  that already has C files offers to include them; in an empty folder it creates `main.c` from a template. A `.wccproj`
+  that already has C files (subfolders included) offers to include them; in an empty folder it creates `main.c` from a template. A `.wccproj`
   also opens via Open (Ctrl+O), by dropping it onto the window and from the command line. While a project is open,
   the "program kind" selector writes into the project.
 - File tabs (new, open, save, close with an unsaved-changes prompt) — `MainWindow.Files.cs`; one open file —

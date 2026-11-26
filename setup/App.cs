@@ -15,6 +15,9 @@ namespace WinCC.Setup
         {
             bool silent = Has(args, "/silent") || Has(args, "-silent");
             bool uninstall = Has(args, "/uninstall") || Has(args, "-uninstall");
+            // /lang=en|ru — язык установщика (и окна WinCC); без него — как уже выбран в WinCC, иначе язык Windows
+            string lang = Value(args, "/lang=");
+            bool russian = lang == "ru" || (lang != "en" && Loc.DefaultRussian());
 
             if (Has(args, "/drytest"))
             {
@@ -24,6 +27,7 @@ namespace WinCC.Setup
 
             if (silent)
             {
+                Loc.Apply(russian);
                 try
                 {
                     if (uninstall) Installer.Uninstall(null);
@@ -33,11 +37,12 @@ namespace WinCC.Setup
                         string dir = Value(args, "/dir=");
                         if (!string.IsNullOrEmpty(dir)) opt.Folder = dir;
                         Installer.Install(opt, null);
+                        if (lang != null) Loc.SaveIdeLanguage();
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console("Ошибка: " + ex.Message);
+                    Console(Loc.F("Error", ex.Message));
                     Environment.ExitCode = 1;
                 }
                 return;
@@ -47,6 +52,7 @@ namespace WinCC.Setup
             App app = new App();
             // одно оформление — в цветах WinCC, без выбора тем
             app.Resources.MergedDictionaries.Add(new ThemeDictionary { Theme = "Steel" });
+            Loc.Apply(russian);
             var window = new SetupWindow(uninstall);
 
             // --снимок файл.png [ход|готово]: окно рисуется в картинку и программа выходит, ничего не ставя

@@ -30,6 +30,9 @@
                 <Button x:Name="AddButton" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.AddFilesTitle}">
                     <tl:Icon Kind="Plus" Style="{StaticResource PanelIcon}"/>
                 </Button>
+                <Button x:Name="AddFolderButton" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.AddFolderTip}">
+                    <tl:Icon Kind="FolderOpen" Style="{StaticResource PanelIcon}"/>
+                </Button>
                 <Button x:Name="NewFileButton" Style="{StaticResource PanelButton}" ToolTip="{DynamicResource S.NewFileInProject}">
                     <tl:Icon Kind="File" Style="{StaticResource PanelIcon}"/>
                 </Button>

@@ -28,7 +28,7 @@ namespace WinCC.Setup
     public static class Installer
     {
         public const string AppName = "WinCC";
-        public const string LongName = "WinCC — компилятор Си для Windows";
+        public static string LongName { get { return Loc.T("LongName"); } }
         public const string ExeName = "WinCC.exe";
         public const string CompilerName = "wcc.exe";
         public const string SetupName = "WinCCSetup.exe";
@@ -80,15 +80,15 @@ namespace WinCC.Setup
             progress(0);
 
             string folder = opt.Folder.Trim();
-            if (folder.Length == 0) throw new InvalidOperationException("Не задана папка установки.");
+            if (folder.Length == 0) throw new InvalidOperationException(Loc.T("NoFolder"));
 
-            say("Папка: " + folder);
+            say(Loc.F("FolderLine", folder));
             Directory.CreateDirectory(folder);
             CheckWritable(folder);
 
             string exe = Path.Combine(folder, ExeName);
             if (IsRunning(Path.Combine(folder, ExeName)) || IsRunning(Path.Combine(folder, CompilerName)))
-                throw new InvalidOperationException("WinCC сейчас запущен. Закройте его и повторите установку.");
+                throw new InvalidOperationException(Loc.T("RunningInstall"));
 
             // библиотека и заголовки заменяются целиком: от прежней версии не должно остаться лишних файлов
             foreach (string sub in new[] { "runtime", "include" })
@@ -97,9 +97,9 @@ namespace WinCC.Setup
                 if (Directory.Exists(p)) { try { Directory.Delete(p, true); } catch { } }
             }
 
-            say("Распаковка файлов…");
+            say(Loc.T("Unpacking"));
             int count = ExtractPayload(folder, say, f => progress(0.05 + 0.8 * f));
-            say("Скопировано файлов: " + count.ToString(CultureInfo.CurrentCulture));
+            say(Loc.F("Copied", count.ToString(CultureInfo.CurrentCulture)));
             progress(0.85);
 
             string selfTarget = Path.Combine(folder, SetupName);
@@ -109,38 +109,38 @@ namespace WinCC.Setup
 
             if (opt.DesktopShortcut)
             {
-                say("Ярлык на рабочем столе…");
+                say(Loc.T("SayDesktop"));
                 CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                                             AppName + ".lnk"), exe, folder);
             }
             if (opt.StartMenuShortcut)
             {
-                say("Ярлык в меню «Пуск»…");
+                say(Loc.T("SayStart"));
                 CreateShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs),
                                             AppName + ".lnk"), exe, folder);
             }
             if (opt.AddToPath)
             {
-                say("Команда wcc в любой консоли (PATH)…");
+                say(Loc.T("SayPath"));
                 AddToUserPath(folder);
             }
             if (opt.OpenWith)
             {
-                say("WinCC в «Открыть с помощью» для .c, .h и .wccproj…");
+                say(Loc.T("SayOpenWith"));
                 RegisterOpenWith(exe);
             }
 
-            say("Регистрация программы…");
+            say(Loc.T("SayRegister"));
             RegisterUninstall(folder, exe);
             NotifyShell();
             progress(1);
-            say("Установка завершена.");
+            say(Loc.T("SayInstallDone"));
 
             if (opt.LaunchAfter)
             {
-                say("Запуск WinCC…");
+                say(Loc.T("SayLaunch"));
                 try { Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = folder }); }
-                catch (Exception ex) { say("Запустить не удалось: " + ex.Message); }
+                catch (Exception ex) { say(Loc.F("LaunchFailed", ex.Message)); }
             }
         }
 
@@ -154,7 +154,7 @@ namespace WinCC.Setup
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("В папку нельзя писать: " + ex.Message);
+                throw new InvalidOperationException(Loc.F("NotWritable", ex.Message));
             }
         }
 
@@ -184,7 +184,7 @@ namespace WinCC.Setup
             foreach (string name in asm.GetManifestResourceNames())
                 if (name.EndsWith("payload.zip", StringComparison.OrdinalIgnoreCase))
                     return asm.GetManifestResourceStream(name);
-            throw new InvalidOperationException("В установщике нет вложенных файлов программы (payload.zip).");
+            throw new InvalidOperationException(Loc.T("NoPayload"));
         }
 
         public static bool PayloadOk()
@@ -312,7 +312,7 @@ namespace WinCC.Setup
             string command = "\"" + exe + "\" \"%1\"";
             using (RegistryKey k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + ProgId))
             {
-                k.SetValue("", "Исходник Си (WinCC)");
+                k.SetValue("", Loc.T("FileTypeC"));
                 using (RegistryKey icon = k.CreateSubKey("DefaultIcon"))
                     icon.SetValue("", exe + ",0");
                 using (RegistryKey open = k.CreateSubKey(@"shell\open\command"))
@@ -377,29 +377,28 @@ namespace WinCC.Setup
             if (string.IsNullOrEmpty(folder)) folder = DefaultFolder;
 
             if (IsRunning(Path.Combine(folder, ExeName)) || IsRunning(Path.Combine(folder, CompilerName)))
-                throw new InvalidOperationException("WinCC запущен. Закройте его и повторите удаление.");
+                throw new InvalidOperationException(Loc.T("RunningUninstall"));
 
-            say("Удаление ярлыков…");
+            say(Loc.T("SayRemoveShortcuts"));
             SafeDelete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), AppName + ".lnk"));
             SafeDelete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), AppName + ".lnk"));
 
-            say("Команда wcc убирается из PATH…");
+            say(Loc.T("SayRemovePath"));
             RemoveFromUserPath(folder);
 
-            say("WinCC убирается из «Открыть с помощью»…");
+            say(Loc.T("SayRemoveOpenWith"));
             UnregisterOpenWith();
 
-            say("Очистка записей программы…");
+            say(Loc.T("SayCleanRegistry"));
             DeleteKeyTree(Registry.CurrentUser, UninstallKey);
 
-            say("Удаление файлов…");
+            say(Loc.T("SayRemoveFiles"));
             int left = RemoveFolderLater(folder);
 
             NotifyShell();
             say(left == 0
-                ? "Удаление завершено."
-                : "Удаление завершено. В папке " + folder + " остались ваши файлы (" +
-                  left.ToString(CultureInfo.CurrentCulture) + ") — они не тронуты.");
+                ? Loc.T("UninstallDone")
+                : Loc.F("UninstallDoneLeft", folder, left.ToString(CultureInfo.CurrentCulture)));
         }
 
         private static void SafeDelete(string path)

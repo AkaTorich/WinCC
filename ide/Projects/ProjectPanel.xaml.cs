@@ -24,6 +24,9 @@ namespace WinCC.Projects
         public event Action<string> RemoveFileRequested;
         public event Action<string[]> FilesDropped;
         public event Action AddFilesRequested;
+        public event Action AddFolderRequested;
+        /// <summary>Убрать из проекта все файлы папки (полный путь папки).</summary>
+        public event Action<string> RemoveFolderRequested;
         public event Action NewFileRequested;
         public event Action PropertiesRequested;
         public event Action CloseProjectRequested;
@@ -35,6 +38,7 @@ namespace WinCC.Projects
         {
             InitializeComponent();
             AddButton.Click += (s, e) => AddFilesRequested?.Invoke();
+            AddFolderButton.Click += (s, e) => AddFolderRequested?.Invoke();
             NoFilesAddButton.Click += (s, e) => AddFilesRequested?.Invoke();
             NewFileButton.Click += (s, e) => NewFileRequested?.Invoke();
             PropertiesButton.Click += (s, e) => PropertiesRequested?.Invoke();
@@ -131,20 +135,73 @@ namespace WinCC.Projects
             SetActiveFile(activeFile);
         }
 
+        /// <summary>Папка в дереве: её полный путь (для меню «убрать папку», «показать в папке»).</summary>
+        sealed class FolderNode
+        {
+            public string FullPath;
+        }
+
         void AddGroup(string title, IconKind icon, List<string> files)
         {
             if (files.Count == 0) return;
             var group = new TreeViewItem { Header = Row(IconKind.Folder, title + " (" + files.Count + ")", true), IsExpanded = true, Focusable = false };
-            foreach (string f in files)
+            // файлы во вложенных папках — под узлами этих папок: src\util\str.c → src › util › str.c
+            var folders = new Dictionary<string, TreeViewItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (string f in files.OrderBy(x => FolderOf(x), StringComparer.OrdinalIgnoreCase).ThenBy(x => Path.GetFileName(x), StringComparer.OrdinalIgnoreCase))
             {
                 string full = project.FullPath(f);
                 bool exists = File.Exists(full);
-                var item = new TreeViewItem { Header = Row(exists ? icon : IconKind.Warning, f, exists), Tag = full };
+                var item = new TreeViewItem { Header = Row(exists ? icon : IconKind.Warning, Path.GetFileName(f), exists), Tag = full };
                 item.ToolTip = exists ? full : Loc.F("MissingOnDisk", full);
                 item.ContextMenu = FileMenu(full);
-                group.Items.Add(item);
+                FolderItem(group, folders, FolderOf(f)).Items.Add(item);
             }
             Tree.Items.Add(group);
+        }
+
+        /// <summary>Папка файла, как она записана в проекте: «» — сама папка проекта; путь вне проекта — полный.</summary>
+        static string FolderOf(string file)
+        {
+            return Path.GetDirectoryName(file) ?? "";
+        }
+
+        /// <summary>Узел папки (и все узлы над ней), созданный при первой надобности.</summary>
+        ItemsControl FolderItem(TreeViewItem group, Dictionary<string, TreeViewItem> folders, string folder)
+        {
+            if (folder.Length == 0) return group;
+            TreeViewItem node;
+            if (folders.TryGetValue(folder, out node)) return node;
+            // папка вне проекта (полный путь) — один узел с полным путём, без разбивки
+            bool outside = Path.IsPathRooted(folder);
+            string parent = outside ? "" : FolderOf(folder);
+            ItemsControl owner = FolderItem(group, folders, parent);
+            string full = project.FullPath(folder);
+            node = new TreeViewItem
+            {
+                Header = Row(IconKind.FolderOpen, outside ? folder : Path.GetFileName(folder), true),
+                IsExpanded = true,
+                Tag = new FolderNode { FullPath = full },
+                ToolTip = full
+            };
+            node.ContextMenu = FolderMenu(full);
+            owner.Items.Add(node);
+            folders[folder] = node;
+            return node;
+        }
+
+        ContextMenu FolderMenu(string full)
+        {
+            var menu = new ContextMenu();
+            menu.Items.Add(MakeItem(Loc.T("RemoveFolder"), IconKind.Minus, () => RemoveFolderRequested?.Invoke(full)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeItem(Loc.T("ShowInFolder"), IconKind.Folder, () => ShowFolder(full)));
+            return menu;
+        }
+
+        static void ShowFolder(string full)
+        {
+            try { if (Directory.Exists(full)) System.Diagnostics.Process.Start("explorer.exe", "\"" + full + "\""); }
+            catch (Exception) { }
         }
 
         static StackPanel Row(IconKind icon, string text, bool normal)
@@ -192,6 +249,8 @@ namespace WinCC.Projects
         void Tree_KeyDown(object sender, KeyEventArgs e)
         {
             var item = Tree.SelectedItem as TreeViewItem;
+            var folder = item != null ? item.Tag as FolderNode : null;
+            if (folder != null && e.Key == Key.Delete) { e.Handled = true; RemoveFolderRequested?.Invoke(folder.FullPath); return; }
             string path = item != null ? item.Tag as string : null;
             if (path == null) return;
             if (e.Key == Key.Enter) { e.Handled = true; OpenFileRequested?.Invoke(path); }
@@ -205,7 +264,16 @@ namespace WinCC.Projects
 
         IEnumerable<TreeViewItem> FileItems()
         {
-            return Tree.Items.OfType<TreeViewItem>().SelectMany(g => g.Items.OfType<TreeViewItem>());
+            return Tree.Items.OfType<TreeViewItem>().SelectMany(Descendants).Where(i => i.Tag is string);
+        }
+
+        static IEnumerable<TreeViewItem> Descendants(TreeViewItem item)
+        {
+            foreach (var child in item.Items.OfType<TreeViewItem>())
+            {
+                yield return child;
+                foreach (var d in Descendants(child)) yield return d;
+            }
         }
 
         static TreeViewItem ItemOf(DependencyObject d)

@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:tl="clr-namespace:ThemeLibrary"
-        Title="Установка WinCC" Subtitle="компилятор Си для Windows"
+        Title="{DynamicResource S.Title}" Subtitle="{DynamicResource S.Subtitle}"
         Width="760" Height="570" ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen" UseLayoutRounding="True">
 
@@ -56,26 +56,26 @@
                                 <TextBlock x:Name="VersionText" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="Свой компилятор Си для Windows: консольные и оконные программы, библиотеки DLL"
+                        <TextBlock Text="{DynamicResource S.Tagline}"
                                    Foreground="{DynamicResource Theme.TextDim}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                 </DockPanel>
                 <WrapPanel Margin="0,16,0,0">
                     <StackPanel Style="{StaticResource Feature}">
                         <tl:Icon Kind="Code" Style="{StaticResource FeatureIcon}"/>
-                        <TextBlock Text="Редактор с подсветкой" VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource S.FeatEditor}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Style="{StaticResource Feature}">
                         <tl:Icon Kind="Wrench" Style="{StaticResource FeatureIcon}"/>
-                        <TextBlock Text="Команда wcc" VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource S.FeatWcc}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Style="{StaticResource Feature}">
                         <tl:Icon Kind="Layers" Style="{StaticResource FeatureIcon}"/>
-                        <TextBlock Text="Свои DLL" VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource S.FeatDll}" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Style="{StaticResource Feature}">
                         <tl:Icon Kind="Shield" Style="{StaticResource FeatureIcon}"/>
-                        <TextBlock Text="Без прав администратора" VerticalAlignment="Center"/>
+                        <TextBlock Text="{DynamicResource S.FeatNoAdmin}" VerticalAlignment="Center"/>
                     </StackPanel>
                 </WrapPanel>
             </StackPanel>
@@ -84,12 +84,12 @@
         <!-- Страница 1: куда и что -->
         <Border x:Name="PageOptions" Grid.Row="1" Style="{StaticResource Card}" Margin="0,12,0,0">
             <StackPanel>
-                <TextBlock Text="Куда установить" Style="{DynamicResource Theme.H2}"/>
+                <TextBlock Text="{DynamicResource S.WhereTitle}" Style="{DynamicResource Theme.H2}"/>
                 <DockPanel Margin="0,8,0,4">
                     <Button x:Name="BrowseButton" DockPanel.Dock="Right" Style="{StaticResource BarButton}" MinWidth="0" Click="Browse_Click">
                         <StackPanel Orientation="Horizontal">
                             <tl:Icon Kind="FolderOpen" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Обзор…"/>
+                            <TextBlock Text="{DynamicResource S.Browse}"/>
                         </StackPanel>
                     </Button>
                     <TextBox x:Name="FolderBox" VerticalContentAlignment="Center" Padding="8,6"/>
@@ -97,13 +97,13 @@
                 <TextBlock x:Name="InstalledText" Foreground="{DynamicResource Theme.TextDim}" FontSize="12" TextWrapping="Wrap"/>
 
                 <UniformGrid Columns="2" Margin="0,12,0,0">
-                    <CheckBox x:Name="DesktopBox" Style="{StaticResource Option}" IsChecked="True" Content="Ярлык на рабочем столе"/>
-                    <CheckBox x:Name="StartBox" Style="{StaticResource Option}" IsChecked="True" Content="Ярлык в меню «Пуск»"/>
-                    <CheckBox x:Name="PathBox" Style="{StaticResource Option}" IsChecked="True" Content="Команда wcc в любой консоли"
-                              ToolTip="Папка WinCC добавляется в переменную PATH пользователя"/>
-                    <CheckBox x:Name="OpenWithBox" Style="{StaticResource Option}" IsChecked="True" Content="WinCC в «Открыть с помощью» для .c, .h и .wccproj"
-                              ToolTip="Программа, которая открывает .c сейчас, остаётся прежней"/>
-                    <CheckBox x:Name="LaunchBox" Style="{StaticResource Option}" IsChecked="True" Content="Запустить WinCC после установки"/>
+                    <CheckBox x:Name="DesktopBox" Style="{StaticResource Option}" IsChecked="True" Content="{DynamicResource S.OptDesktop}"/>
+                    <CheckBox x:Name="StartBox" Style="{StaticResource Option}" IsChecked="True" Content="{DynamicResource S.OptStart}"/>
+                    <CheckBox x:Name="PathBox" Style="{StaticResource Option}" IsChecked="True" Content="{DynamicResource S.OptPath}"
+                              ToolTip="{DynamicResource S.OptPathTip}"/>
+                    <CheckBox x:Name="OpenWithBox" Style="{StaticResource Option}" IsChecked="True" Content="{DynamicResource S.OptOpenWith}"
+                              ToolTip="{DynamicResource S.OptOpenWithTip}"/>
+                    <CheckBox x:Name="LaunchBox" Style="{StaticResource Option}" IsChecked="True" Content="{DynamicResource S.OptLaunch}"/>
                 </UniformGrid>
             </StackPanel>
         </Border>
@@ -111,7 +111,7 @@
         <!-- Страница 2: ход установки -->
         <Border x:Name="PageProgress" Grid.Row="1" Style="{StaticResource Card}" Margin="0,12,0,0" Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" Margin="10,0">
-                <TextBlock x:Name="ProgressTitle" Text="Установка…" Style="{DynamicResource Theme.H2}"/>
+                <TextBlock x:Name="ProgressTitle" Text="{DynamicResource S.Installing}" Style="{DynamicResource Theme.H2}"/>
                 <ProgressBar x:Name="Progress" Height="10" Minimum="0" Maximum="1" Margin="0,16,0,10"/>
                 <TextBlock x:Name="StepText" Foreground="{DynamicResource Theme.TextDim}" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
@@ -134,16 +134,22 @@
                     Padding="14,8" Click="Uninstall_Click">
                 <StackPanel Orientation="Horizontal">
                     <tl:Icon Kind="Trash" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="Удалить WinCC"/>
+                    <TextBlock Text="{DynamicResource S.UninstallButton}"/>
                 </StackPanel>
             </Button>
+            <StackPanel x:Name="LanguagePanel" DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0"
+                        ToolTip="{DynamicResource S.LanguageTip}">
+                <tl:Icon Kind="Globe" Width="16" Height="16" Margin="0,0,7,0" VerticalAlignment="Center"
+                         Foreground="{DynamicResource Theme.TextDim}"/>
+                <ComboBox x:Name="LanguageBox" Width="110" VerticalAlignment="Center"/>
+            </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="CloseButton" Content="Отмена" Style="{StaticResource BarButton}" Click="Close_Click"/>
+                <Button x:Name="CloseButton" Content="{DynamicResource S.Cancel}" Style="{StaticResource BarButton}" Click="Close_Click"/>
                 <Button x:Name="InstallButton" Style="{DynamicResource Theme.AccentButton}" Padding="22,8" Margin="8,0,0,0"
                         MinWidth="150" IsDefault="True" Click="Install_Click">
                     <StackPanel Orientation="Horizontal">
                         <tl:Icon x:Name="InstallIcon" Kind="Download" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="InstallText" Text="Установить"/>
+                        <TextBlock x:Name="InstallText"/>
                     </StackPanel>
                 </Button>
             </StackPanel>

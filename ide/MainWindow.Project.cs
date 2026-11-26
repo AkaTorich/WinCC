@@ -28,6 +28,8 @@ namespace WinCC
             ProjectSide.RemoveFileRequested += RemoveFromProject;
             ProjectSide.FilesDropped += OnProjectDrop;
             ProjectSide.AddFilesRequested += AddFilesToProject;
+            ProjectSide.AddFolderRequested += AddFolderToProject;
+            ProjectSide.RemoveFolderRequested += RemoveFolderFromProject;
             ProjectSide.NewFileRequested += NewProjectFile;
             ProjectSide.PropertiesRequested += EditProjectProperties;
             ProjectSide.CloseProjectRequested += CloseProject;
@@ -165,11 +167,10 @@ namespace WinCC
             if (dlg.ShowDialog(this) != true) return;
 
             var p = new Project(dlg.FileName) { Kind = CurrentKind };
-            var found = Directory.GetFiles(p.Folder)
+            // файлы Си из папки проекта и её вложенных папок (порядок ScanFolder: свои, потом вложенные; заголовки — после)
+            var found = Project.ScanFolder(p.Folder)
                 .Where(f => (Project.IsBuildFile(f) || Project.IsHeader(f)) && !f.EndsWith(".res", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => Project.IsHeader(f) ? 1 : 0)
-                .ThenBy(f => Path.GetFileName(f).Equals("main.c", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
-                .ThenBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
                 .ToList();
             try
             {
@@ -225,11 +226,36 @@ namespace WinCC
             AddToProject(dlg.FileNames);
         }
 
-        void AddToProject(string[] files)
+        /// <summary>Папка целиком: её файлы Си, заголовки, ассемблер и ресурсы со всеми вложенными папками.</summary>
+        void AddFolderToProject()
+        {
+            if (project == null) return;
+            string folder = FolderBrowser.Pick(this, Loc.T("AddFolderTitle"), project.Folder);
+            if (string.IsNullOrEmpty(folder)) return;
+            AddToProject(new[] { folder });
+        }
+
+        void RemoveFolderFromProject(string folder)
+        {
+            if (project == null) return;
+            if (project.RemoveFolder(folder) > 0 && SaveProject()) ProjectSide.Refresh();
+        }
+
+        /// <summary>Файлы и папки — в проект; папка раскрывается в свои файлы со вложенными папками.</summary>
+        void AddToProject(string[] paths)
         {
             bool changed = false;
-            foreach (string f in files)
-                if (File.Exists(f) && !Project.IsProjectFile(f)) changed |= project.Add(f);
+            foreach (string p in paths)
+            {
+                if (Directory.Exists(p))
+                {
+                    var found = Project.ScanFolder(p);
+                    if (found.Count == 0)
+                        ThemedMessageBox.Show(this, Loc.F("FolderNoFiles", p), Loc.T("Project"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    foreach (string f in found) changed |= project.Add(f);
+                }
+                else if (File.Exists(p) && !Project.IsProjectFile(p)) changed |= project.Add(p);
+            }
             if (changed && SaveProject()) ProjectSide.Refresh();
         }
 

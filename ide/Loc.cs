@@ -176,6 +176,11 @@ namespace WinCC
             Add("GroupOther", "Other", "Прочие");
             Add("MissingOnDisk", "Missing on disk: {0}", "Файла нет на диске: {0}");
             Add("RemoveFromProject", "Remove from project", "Убрать из проекта");
+            Add("AddFolderTip", "Add a folder with its subfolders", "Добавить папку с вложенными папками");
+            Add("AddFolderTitle", "Add a folder to the project", "Добавить папку в проект");
+            Add("FolderNoFiles", "There are no C files, headers, assembler files or resources in this folder:\n{0}",
+                                 "В папке нет файлов Си, заголовков, ассемблера и ресурсов:\n{0}");
+            Add("RemoveFolder", "Remove folder from project", "Убрать папку из проекта");
             Add("ShowInFolder", "Show in folder", "Показать в папке");
 
             // Свойства проекта
