@@ -5,7 +5,7 @@ using ThemeLibrary;
 
 namespace WinCC
 {
-    /// <summary>Editor settings: interface language (each language is named in itself). OK returns the choice in Language.</summary>
+    /// <summary>Настройки окна: язык (каждый назван на нём самом). «Сохранить» — выбор уходит в Language.</summary>
     public class SettingsDialog : ThemedDialog
     {
         readonly ComboBox languageBox = new ComboBox { Width = 180, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };

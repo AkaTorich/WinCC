@@ -12,11 +12,11 @@ namespace WinCC.Build
         public int ExitCode;
         public string OutputFile;
         public TimeSpan Elapsed;
-        /// <summary>Why the build did not start (no compiler, file locked); null — it started.</summary>
+        /// <summary>Почему сборка не началась (нет компилятора, файл занят); null — началась.</summary>
         public string NotStarted;
     }
 
-    /// <summary>Runs the wcc.exe next to WinCC.exe: "wcc file.c -o file.exe [--gui | --dll]" or with the project's arguments.</summary>
+    /// <summary>Запуск wcc.exe, лежащего рядом с WinCC.exe: «wcc файл.c -o файл.exe [--gui | --dll]» или с параметрами проекта.</summary>
     public class Compiler
     {
         Process running;
@@ -26,7 +26,7 @@ namespace WinCC.Build
 
         public bool IsBusy { get { return running != null; } }
 
-        /// <summary>Where the output goes: next to the source, with a .exe or .dll extension.</summary>
+        /// <summary>Куда ляжет готовый файл: рядом с исходником, с расширением .exe или .dll.</summary>
         public static string OutputFor(string source, ProgramKind kind)
         {
             return Path.ChangeExtension(source, ProgramKinds.Extension(kind));
@@ -41,8 +41,8 @@ namespace WinCC.Build
             return sb.ToString();
         }
 
-        /// <summary>Build: folder — base for relative paths, arguments — wcc arguments, output — the expected result.
-        /// Every compiler output line goes to onLine (from another thread).</summary>
+        /// <summary>Сборка: folder — откуда считаются пути, arguments — параметры wcc, output — что должно получиться.
+        /// Каждая строка вывода компилятора уходит в onLine (из чужого потока).</summary>
         public async Task<BuildResult> BuildAsync(string folder, string arguments, string output, Action<string> onLine)
         {
             var result = new BuildResult { OutputFile = output };
@@ -99,7 +99,7 @@ namespace WinCC.Build
             return result;
         }
 
-        /// <summary>Abort a running build (when the window closes).</summary>
+        /// <summary>Прервать идущую сборку (при закрытии окна).</summary>
         public void Cancel()
         {
             var p = running;

@@ -16,11 +16,11 @@ namespace WinCC
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            ThemeManager.Apply("Cyberpunk");       // the window has one theme, Cyberpunk
+            ThemeManager.Apply("Cyberpunk");       // у окна одна тема — «Киберпанк»
             var args = e.Args;
 
-            // --window <file.png> [WxH] [empty] [project:file.wccproj] [lang:en|ru]: a window snapshot without showing it —
-            // with sample code, output and errors, or with a project open
+            // --window <файл.png> [ШxВ] [empty] [project:файл.wccproj] [lang:en|ru]: снимок окна без показа —
+            // с образцом кода, выводом и ошибками или с открытым проектом; lang — язык окна
             if (args.Length >= 2 && args[0] == "--window")
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;

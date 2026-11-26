@@ -12,13 +12,13 @@ using WinCC.Documents;
 namespace WinCC
 {
     /// <summary>
-    /// Main window: toolbar, file tabs, bottom panel with compiler output and errors, status bar.
-    /// Files — MainWindow.Files.cs, build and run — MainWindow.Build.cs, project and side panel — MainWindow.Project.cs.
+    /// Главное окно: кнопки, вкладки файлов, нижняя панель с выводом компилятора и ошибками, строка состояния.
+    /// Работа с файлами — MainWindow.Files.cs, сборка и запуск — MainWindow.Build.cs, проект и панель сбоку — MainWindow.Project.cs.
     /// </summary>
     public partial class MainWindow : ThemedWindow
     {
         readonly Settings settings;
-        /// <summary>Snapshot window: remembers nothing.</summary>
+        /// <summary>Окно для снимка: ничего не запоминает.</summary>
         readonly bool snapshotMode;
 
         public MainWindow() : this(false) { }
@@ -84,7 +84,7 @@ namespace WinCC
             get { return Docs.Items.OfType<TabItem>().Select(t => t.Tag as SourceDocument).Where(d => d != null); }
         }
 
-        /// <summary>Reopen the last project and files; with no files, one new file from the template.</summary>
+        /// <summary>Открыть проект и файлы прошлого раза; если файлов нет — один новый файл с заготовкой.</summary>
         public void RestoreSession()
         {
             foreach (string f in settings.Files)
@@ -133,7 +133,7 @@ namespace WinCC
             CompilerIcon.ToolTip = Compiler.WccPath;
         }
 
-        /// <summary>Settings dialog; a new language applies at once to the whole window.</summary>
+        /// <summary>Окно настроек; новый язык сразу применяется ко всему окну.</summary>
         void EditSettings()
         {
             var dlg = new SettingsDialog(this, settings.Language);
@@ -143,7 +143,7 @@ namespace WinCC
             ApplyLanguage();
         }
 
-        /// <summary>Re-applies the interface language: XAML texts follow by themselves, code-made texts are refreshed here.</summary>
+        /// <summary>Применить язык окна: надписи XAML меняются сами, надписи, сделанные кодом, обновляются здесь.</summary>
         void ApplyLanguage()
         {
             Loc.Apply(settings.Language);

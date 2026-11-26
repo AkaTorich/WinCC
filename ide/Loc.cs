@@ -4,13 +4,13 @@ using System.Windows;
 
 namespace WinCC
 {
-    /// <summary>Interface language of the editor.</summary>
+    /// <summary>Язык окна.</summary>
     public enum UiLanguage { English, Russian }
 
     /// <summary>
-    /// Interface strings in every language, side by side. Loc.Apply puts the chosen language into the application
-    /// resources as "S.&lt;key&gt;", so XAML shows them with {DynamicResource S.key} and switches live; code takes them with
-    /// Loc.T("key") or Loc.F("key", args) (string.Format placeholders).
+    /// Надписи окна на всех языках, рядом. Loc.Apply кладёт выбранный язык в ресурсы приложения как «S.&lt;ключ&gt;» —
+    /// XAML берёт их через {DynamicResource S.ключ} и меняется на ходу; код — Loc.T("ключ") или Loc.F("ключ", …)
+    /// (места для значений — как в string.Format).
     /// </summary>
     public static class Loc
     {
@@ -20,7 +20,7 @@ namespace WinCC
 
         public static readonly UiLanguage[] All = { UiLanguage.English, UiLanguage.Russian };
 
-        /// <summary>The language's name in that language (for the settings list).</summary>
+        /// <summary>Имя языка на нём самом (для списка в настройках).</summary>
         public static string NativeName(UiLanguage lang) { return lang == UiLanguage.Russian ? "Русский" : "English"; }
 
         public static string Code(UiLanguage lang) { return lang == UiLanguage.Russian ? "ru" : "en"; }
@@ -30,7 +30,7 @@ namespace WinCC
             return code == "ru" ? UiLanguage.Russian : code == "en" ? UiLanguage.English : SystemDefault;
         }
 
-        /// <summary>Russian for a Russian Windows, English otherwise.</summary>
+        /// <summary>Русский для русской Windows, иначе английский.</summary>
         public static UiLanguage SystemDefault
         {
             get { return CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ru" ? UiLanguage.Russian : UiLanguage.English; }
@@ -47,7 +47,7 @@ namespace WinCC
         public static void Apply(UiLanguage lang)
         {
             Current = lang;
-            // ThemeLibrary's own texts (message box buttons, window button tooltips) follow the same language
+            // надписи самой ThemeLibrary (кнопки сообщений, подсказки кнопок окна) — на том же языке
             ThemeLibrary.ThemeManager.Language = lang == UiLanguage.Russian ? "ru-RU" : "en-US";
             var res = Application.Current.Resources;
             foreach (var pair in table) res["S." + pair.Key] = pair.Value[(int)lang];
@@ -57,7 +57,7 @@ namespace WinCC
 
         static Loc()
         {
-            // Window and toolbar
+            // Окно и кнопки
             Add("Subtitle", "C compiler for Windows", "компилятор Си для Windows");
             Add("HelpTip", "Help — WinCC manual (F1)", "Справка — руководство WinCC (F1)");
             Add("SettingsTip", "Settings", "Настройки");
@@ -96,7 +96,7 @@ namespace WinCC
             Add("Warning", "Warning", "Предупреждение");
             Add("Error", "Error", "Ошибка");
 
-            // Status bar
+            // Строка состояния
             Add("UnsavedPath", "New file — save it before building", "Новый файл — сохраните его перед сборкой");
             Add("Caret", "Ln {0}, Col {1}", "Строка {0}, столбец {1}");
             Add("StatusProject", "Project: {0} · ", "Проект: {0} · ");
@@ -104,7 +104,7 @@ namespace WinCC
             Add("WccFound", "wcc.exe found", "wcc.exe на месте");
             Add("WccMissing", "wcc.exe not found", "wcc.exe не найден");
 
-            // Building
+            // Сборка
             Add("Building", "Building: {0} → {1} ({2})", "Сборка: {0} → {1} ({2})");
             Add("BuildingProject", "Building project \"{0}\": {1} file(s) → {2} ({3})", "Сборка проекта «{0}»: файлов {1} → {2} ({3})");
             Add("NothingToBuild", "Project \"{0}\" has no .c files — nothing to build.", "В проекте «{0}» нет файлов .c — собирать нечего.");
@@ -125,7 +125,7 @@ namespace WinCC
             Add("ProgramExited", "[Program finished, exit code {0}]", "[Программа завершилась, код {0}]");
             Add("PressAnyKey", "Press any key to close the window.", "Нажмите любую клавишу, чтобы закрыть окно.");
 
-            // Files
+            // Файлы
             Add("FilterSave", "C sources (*.c; *.h)|*.c;*.h|Resources (*.rc)|*.rc|All files (*.*)|*.*",
                               "Исходники Си (*.c; *.h)|*.c;*.h|Ресурсы (*.rc)|*.rc|Все файлы (*.*)|*.*");
             Add("FilterOpen", "C sources, resources and projects (*.c; *.h; *.rc; *.wccproj)|*.c;*.h;*.rc;*.wccproj|WinCC projects (*.wccproj)|*.wccproj|All files (*.*)|*.*",
@@ -145,13 +145,13 @@ namespace WinCC
             Add("CloseTab", "Close tab", "Закрыть вкладку");
             Add("Utf8Bom", "UTF-8 with BOM", "UTF-8 с BOM");
 
-            // Help
+            // Справка
             Add("Help", "Help", "Справка");
             Add("ManualMissing", "\"{0}\" was not found next to WinCC.exe.\nIt is installed with WinCC — reinstall the program.",
                                  "Файл «{0}» не найден рядом с WinCC.exe.\nОн ставится вместе с WinCC — переустановите программу.");
             Add("CannotOpenManual", "Could not open the manual:\n{0}\n\n{1}", "Не удалось открыть руководство:\n{0}\n\n{1}");
 
-            // Project
+            // Проект
             Add("OpenProjectTitle", "Open project", "Открыть проект");
             Add("CannotOpenProject", "Could not open the project:\n{0}\n\n{1}", "Не удалось открыть проект:\n{0}\n\n{1}");
             Add("CannotSaveProject", "Could not save the project:\n{0}\n\n{1}", "Не удалось сохранить проект:\n{0}\n\n{1}");
@@ -178,7 +178,7 @@ namespace WinCC
             Add("RemoveFromProject", "Remove from project", "Убрать из проекта");
             Add("ShowInFolder", "Show in folder", "Показать в папке");
 
-            // Project properties
+            // Свойства проекта
             Add("PropertiesTitle", "Project properties: {0}", "Свойства проекта «{0}»");
             Add("OutputFile", "Output file", "Готовый файл");
             Add("OutputEmpty", "Empty — {0}.exe / .dll", "Пусто — {0}.exe / .dll");
@@ -189,7 +189,7 @@ namespace WinCC
             Add("StackDefault", "0 — 8 MB", "0 — 8 МБ");
             Add("OtherArgs", "Other arguments", "Другие параметры");
 
-            // Settings
+            // Настройки
             Add("SettingsTitle", "Settings", "Настройки");
             Add("Language", "Language", "Язык");
         }

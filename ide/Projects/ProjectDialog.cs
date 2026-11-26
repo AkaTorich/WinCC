@@ -8,8 +8,8 @@ using WinCC.Build;
 
 namespace WinCC.Projects
 {
-    /// <summary>Project properties: program kind, output name, macros, #include folders, DLLs, stack, other wcc arguments.
-    /// Lists are separated by ";". OK puts the values into the project (the window saves it).</summary>
+    /// <summary>Свойства проекта: вид программы, имя готового файла, макросы, папки #include, DLL, стек, другие параметры wcc.
+    /// Списки пишутся через «;». ОК — значения уходят в проект (сохраняет окно).</summary>
     public class ProjectDialog : ThemedDialog
     {
         readonly Project project;

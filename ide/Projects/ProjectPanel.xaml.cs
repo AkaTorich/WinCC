@@ -11,9 +11,9 @@ using WinCC.Build;
 namespace WinCC.Projects
 {
     /// <summary>
-    /// Project side panel: project name, files by group (sources, headers, resources, other), what the build produces.
-    /// Without a project — New project, Open project and recent projects.
-    /// It changes nothing itself: requests go to the window as events (MainWindow.Project.cs).
+    /// Панель проекта сбоку окна: имя проекта, файлы по группам (исходники, заголовки, ресурсы, прочие), что получится при сборке.
+    /// Без проекта — кнопки «Новый проект», «Открыть проект» и недавние проекты.
+    /// Сама ничего не меняет: просьбы уходят окну событиями (MainWindow.Project.cs).
     /// </summary>
     public partial class ProjectPanel : UserControl
     {
@@ -28,7 +28,7 @@ namespace WinCC.Projects
         public event Action PropertiesRequested;
         public event Action CloseProjectRequested;
         public event Action NewProjectRequested;
-        /// <summary>Open a project: a path from the recent list, or null — ask for a file.</summary>
+        /// <summary>Открыть проект: путь из недавних или null — спросить файл.</summary>
         public event Action<string> OpenProjectRequested;
 
         public ProjectPanel()
@@ -85,7 +85,7 @@ namespace WinCC.Projects
             set { project = value; Refresh(); }
         }
 
-        /// <summary>The active tab's file — shown in bold in the tree.</summary>
+        /// <summary>Файл активной вкладки — в дереве выделяется жирным.</summary>
         public void SetActiveFile(string path)
         {
             activeFile = path;
@@ -106,7 +106,7 @@ namespace WinCC.Projects
             RecentTitle.Visibility = RecentList.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        /// <summary>Rebuild the tree from the project (after the file list or properties change).</summary>
+        /// <summary>Перерисовать дерево по проекту (после правки списка или свойств).</summary>
         public void Refresh()
         {
             ProjectView.Visibility = project != null ? Visibility.Visible : Visibility.Collapsed;

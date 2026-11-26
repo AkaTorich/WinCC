@@ -5,9 +5,8 @@ using System.Text.RegularExpressions;
 namespace WinCC.Build
 {
     /// <summary>
-    /// A compiler message "file:line: text" (also "file:line:column: text").
-    /// A path may start with a drive letter ("C:\…"), so the colon is searched for before a number.
-    /// wcc prints its messages in Russian, so the Russian prefixes are recognised alongside the English ones.
+    /// Сообщение компилятора вида «файл:строка: текст» (бывает и «файл:строка:столбец: текст»).
+    /// Путь может начинаться с буквы диска — «C:\…», поэтому двоеточие ищется перед числом.
     /// </summary>
     public class CompilerMessage
     {
@@ -24,8 +23,8 @@ namespace WinCC.Build
         public string FileName { get { return string.IsNullOrEmpty(File) ? "" : Path.GetFileName(File); } }
         public string LineText { get { return Line > 0 ? Line.ToString() : ""; } }
 
-        /// <summary>A message without file and line ("function declared but not defined", "no main function"):
-        /// the build failed and the error has no location.</summary>
+        /// <summary>Сообщение без файла и строки («функция объявлена, но не написана», «нет функции main»):
+        /// сборка не удалась, а места у ошибки нет.</summary>
         public static CompilerMessage Plain(string outputLine)
         {
             string text = outputLine.Trim();
@@ -36,7 +35,7 @@ namespace WinCC.Build
         }
         public string Kind { get { return IsWarning ? Loc.T("Warning") : Loc.T("Error"); } }
 
-        /// <summary>Parses an output line; null — not an error message. folder — base for relative paths.</summary>
+        /// <summary>Разбирает строку вывода; null — это не сообщение об ошибке. folder — откуда считать относительные пути.</summary>
         public static CompilerMessage TryParse(string outputLine, string folder)
         {
             if (string.IsNullOrWhiteSpace(outputLine)) return null;
@@ -48,7 +47,7 @@ namespace WinCC.Build
             if (m.Groups["col"].Success) int.TryParse(m.Groups["col"].Value, out col);
 
             string file = m.Groups["file"].Value.Trim();
-            // "ERROR: …" and similar lines without a path are skipped: a path has an extension dot
+            // «ОШИБКА: …» и подобные строки без пути отсеиваются: у пути есть точка расширения
             if (file.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || Path.GetExtension(file).Length == 0) return null;
 
             string full;

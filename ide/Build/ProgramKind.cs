@@ -1,6 +1,6 @@
 namespace WinCC.Build
 {
-    /// <summary>The kind of program being built — chosen in the window.</summary>
+    /// <summary>Вид собираемой программы — выбирается в окне.</summary>
     public enum ProgramKind { Console, Window, Dll }
 
     public static class ProgramKinds
@@ -17,10 +17,10 @@ namespace WinCC.Build
             }
         }
 
-        /// <summary>Output file extension.</summary>
+        /// <summary>Расширение готового файла.</summary>
         public static string Extension(ProgramKind kind) { return kind == ProgramKind.Dll ? ".dll" : ".exe"; }
 
-        /// <summary>wcc switch for the kind: --gui for Window, --dll for DLL, none for Console.</summary>
+        /// <summary>Ключ wcc для вида: --gui для окна, --dll для DLL, у консоли нет.</summary>
         public static string Switch(ProgramKind kind)
         {
             switch (kind)

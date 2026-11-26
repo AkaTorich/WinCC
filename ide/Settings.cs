@@ -7,10 +7,10 @@ using WinCC.Build;
 namespace WinCC
 {
     /// <summary>
-    /// What the window remembers between runs: interface language, program kind, open files, the front one, project,
-    /// recent projects, project panel (shown, width), bottom panel height
-    /// (as a share of the editor height — so it shrinks with the window).
-    /// File %APPDATA%\WinCC\settings.txt, "key=value" lines. The window has one theme, Cyberpunk.
+    /// Что окно помнит между запусками: язык окна, вид программы, открытые файлы, какой из них был впереди, проект, недавние проекты,
+    /// панель проекта (показана ли, ширина), высоту нижней панели
+    /// (долей от высоты редактора — так она уменьшается вместе с окном).
+    /// Файл %APPDATA%\WinCC\settings.txt, строки «ключ=значение». Тема у окна одна — «Киберпанк».
     /// </summary>
     public class Settings
     {
@@ -19,9 +19,9 @@ namespace WinCC
         public readonly List<string> Files = new List<string>();
         public int Active = -1;
         public double BottomShare = 0.36;
-        /// <summary>Open project (.wccproj) or null.</summary>
+        /// <summary>Открытый проект (.wccproj) или null.</summary>
         public string Project;
-        /// <summary>Recent projects, newest first.</summary>
+        /// <summary>Недавние проекты, свежий первым.</summary>
         public readonly List<string> Recent = new List<string>();
         public double PanelWidth = 250;
         public bool PanelShown = true;

@@ -1,6 +1,6 @@
 namespace WinCC
 {
-    /// <summary>Sample code and output for window snapshots (--window).</summary>
+    /// <summary>Образцы кода и вывода для проверочных снимков окна (--window).</summary>
     static class Samples
     {
         public const string Hello =

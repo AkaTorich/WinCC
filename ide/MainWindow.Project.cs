@@ -10,16 +10,16 @@ using WinCC.Projects;
 
 namespace WinCC
 {
-    /// <summary>Project: side panel, new / open / close, project files, properties, recent projects.
-    /// While a project is open, Build and Run build all of it (MainWindow.Build.cs).</summary>
+    /// <summary>Проект: панель сбоку, новый / открыть / закрыть, файлы проекта, свойства, недавние проекты.
+    /// Пока проект открыт, «Собрать» и «Запустить» собирают его целиком (MainWindow.Build.cs).</summary>
     public partial class MainWindow
     {
-        /// <summary>Template for a new .rc: the program icon goes first, Windows uses it for shortcuts.</summary>
+        /// <summary>Заготовка нового .rc: значок программы — первым, Windows берёт его для ярлыков.</summary>
         const string NewRcText = "#include <windows.h>\r\n\r\n1 ICON \"app.ico\"\r\n";
         const int RecentLimit = 8;
 
         Project project;
-        /// <summary>The kind selection is being changed from code — write it neither to the project nor to settings.</summary>
+        /// <summary>Выбор вида меняется из кода — не записывать его ни в проект, ни в настройки.</summary>
         bool syncingKind;
 
         void InitProjectPanel()
@@ -63,7 +63,7 @@ namespace WinCC
             UpdateStatus();
         }
 
-        /// <summary>Program kind chosen in the window: into the project if one is open, otherwise into settings.</summary>
+        /// <summary>Вид программы выбран в окне: у проекта — в проект, без проекта — в настройки.</summary>
         void OnKindChosen()
         {
             if (syncingKind) return;
@@ -85,7 +85,7 @@ namespace WinCC
             if (dlg.ShowDialog(this) == true) OpenProject(dlg.FileName, true);
         }
 
-        /// <summary>Open a project (the previous one closes). openFirst — open the first source if no project file is open.</summary>
+        /// <summary>Открыть проект (прежний закрывается). openFirst — открыть первый исходник, если ни один файл проекта не открыт.</summary>
         public bool OpenProject(string path, bool openFirst)
         {
             Project loaded;
@@ -148,8 +148,8 @@ namespace WinCC
             }
         }
 
-        /// <summary>New project: a .wccproj file in the chosen folder. C files already there join the project if the user agrees;
-        /// an empty folder gets main.c from the template.</summary>
+        /// <summary>Новый проект: файл .wccproj в выбранной папке. Файлы Си, что там уже лежат, — по согласию в проект;
+        /// пустая папка — main.c с заготовкой.</summary>
         void NewProject()
         {
             var dlg = new SaveFileDialog
@@ -196,7 +196,7 @@ namespace WinCC
             OpenProject(p.Path, true);
         }
 
-        /// <summary>Not text: such a project file opens in its Windows program, not in an editor tab.</summary>
+        /// <summary>Не текст: такой файл проекта открывает программа Windows, а не вкладка редактора.</summary>
         static readonly string[] binaryExtensions = { ".res", ".ico", ".cur", ".bmp", ".png", ".jpg", ".gif", ".ani", ".bin" };
 
         void OpenProjectFile(string path)
@@ -233,7 +233,7 @@ namespace WinCC
             if (changed && SaveProject()) ProjectSide.Refresh();
         }
 
-        /// <summary>Files dropped onto the panel: a project is opened, the rest joins the project (without a project — just opened).</summary>
+        /// <summary>Файлы брошены на панель: проект — открыть, остальное — в проект (без проекта — просто открыть).</summary>
         void OnProjectDrop(string[] files)
         {
             string proj = files.FirstOrDefault(Project.IsProjectFile);

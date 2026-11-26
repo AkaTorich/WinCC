@@ -8,10 +8,10 @@ using WinCC.Documents;
 
 namespace WinCC
 {
-    /// <summary>File tabs: new, open, save, close.</summary>
+    /// <summary>Вкладки файлов: новый, открыть, сохранить, закрыть.</summary>
     public partial class MainWindow
     {
-        /// <summary>Template for a new file.</summary>
+        /// <summary>Заготовка нового файла.</summary>
         public const string NewFileText =
             "#include <stdio.h>\r\n" +
             "\r\n" +
@@ -39,8 +39,8 @@ namespace WinCC
             foreach (string f in dlg.FileNames) OpenPath(f, true);
         }
 
-        /// <summary>Open a file in a tab; an already open one is just shown. An untouched empty "untitled" tab is replaced.
-        /// A .wccproj file opens as a project (no tab — null).</summary>
+        /// <summary>Открыть файл во вкладке; уже открытый — просто показать. Нетронутый пустой «без имени» заменяется.
+        /// Файл .wccproj открывается как проект (вкладки нет — null).</summary>
         public SourceDocument OpenPath(string path, bool activate)
         {
             if (Projects.Project.IsProjectFile(path))
@@ -90,7 +90,7 @@ namespace WinCC
             if (Current != null) SaveDocument(Current, saveAs);
         }
 
-        /// <summary>Save; for a new file (or saveAs) ask where. false — the user cancelled or saving failed.</summary>
+        /// <summary>Сохранить; у нового файла (или по saveAs) — спросить, куда. false — пользователь отказался или не вышло.</summary>
         bool SaveDocument(SourceDocument doc, bool saveAs)
         {
             string path = doc.Path;
@@ -133,7 +133,7 @@ namespace WinCC
             RemoveDocument(doc);
         }
 
-        /// <summary>The file is modified: save, don't save or cancel. true — it may be closed.</summary>
+        /// <summary>Файл изменён: сохранить, не сохранять или отменить. true — можно закрывать.</summary>
         bool ConfirmDiscard(SourceDocument doc)
         {
             var answer = ThemedMessageBox.Show(this, Loc.F("SaveChanges", doc.Name), Loc.T("FileModified"),

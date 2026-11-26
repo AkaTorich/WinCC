@@ -13,12 +13,12 @@ using WinCC.Documents;
 
 namespace WinCC
 {
-    /// <summary>Building with wcc.exe, output in the bottom panel, error list, running the result.</summary>
+    /// <summary>Сборка через wcc.exe, вывод в нижнюю панель, список ошибок, запуск готовой программы.</summary>
     public partial class MainWindow
     {
         readonly Compiler compiler = new Compiler();
         readonly ObservableCollection<CompilerMessage> messages = new ObservableCollection<CompilerMessage>();
-        /// <summary>Output lines not shaped "file:line: text" — when a build fails without located errors, these are the errors.</summary>
+        /// <summary>Строки вывода не вида «файл:строка: текст» — если сборка не удалась, а ошибок с местом нет, они и есть ошибки.</summary>
         readonly List<string> looseLines = new List<string>();
         bool building;
         string buildFolder;
@@ -30,7 +30,7 @@ namespace WinCC
             else if (Current != null) await BuildCurrent(run);
         }
 
-        /// <summary>Save modified files before building: headers may have changed too.</summary>
+        /// <summary>Сохранить изменённые файлы перед сборкой: заголовки тоже могли поменяться.</summary>
         void SaveModifiedFiles(SourceDocument except)
         {
             foreach (var other in Documents.Where(d => d != except && d.IsModified && !d.IsUntitled).ToList())
@@ -53,7 +53,7 @@ namespace WinCC
                 "wcc " + Compiler.Arguments(Path.GetFileName(source), Path.GetFileName(output), kind));
         }
 
-        /// <summary>Build the whole project: all its .c and .asm files into one program, options from the project.</summary>
+        /// <summary>Сборка проекта целиком: все его .c и .asm одной программой, параметры — из проекта.</summary>
         async Task BuildProject(bool run)
         {
             var p = project;
@@ -78,7 +78,7 @@ namespace WinCC
                 "wcc " + args);
         }
 
-        /// <summary>Clear the output, errors and editor marks.</summary>
+        /// <summary>Очистить вывод, ошибки и пометки в редакторах.</summary>
         void BeginOutput()
         {
             messages.Clear();
@@ -205,10 +205,10 @@ namespace WinCC
                                      own.Where(m => m.IsWarning).Select(m => m.Line).ToList());
         }
 
-        /// <summary>Open the message's file (if not open yet) and go to its line.</summary>
+        /// <summary>Открыть файл сообщения (если ещё не открыт) и встать на его строку.</summary>
         void GoToMessage(CompilerMessage m)
         {
-            if (m == null || m.FullPath == null) return;     // the error has no source location
+            if (m == null || m.FullPath == null) return;     // у ошибки нет места в исходнике
             var doc = Documents.FirstOrDefault(d => d.IsSamePath(m.FullPath));
             if (doc == null)
             {
@@ -218,7 +218,7 @@ namespace WinCC
                 MarkErrorLines(doc, x => doc.IsSamePath(x.FullPath));
             }
             Docs.SelectedItem = doc.Tab;
-            // Right after a tab switch the editor is not laid out yet — jump a bit later
+            // После смены вкладки редактор ещё не разложен — переход чуть позже
             Dispatcher.BeginInvoke(new Action(() => doc.Editor.GoToLine(m.Line, m.Column)), DispatcherPriority.Loaded);
         }
 
@@ -236,7 +236,7 @@ namespace WinCC
             if (m != null) GoToMessage(m);
         }
 
-        /// <summary>Output and errors for a window snapshot: as after a failed build.</summary>
+        /// <summary>Вывод и ошибки для снимка окна: как после неудачной сборки.</summary>
         public void ShowSampleBuild(SourceDocument doc, string[] lines)
         {
             buildFolder = doc.Path != null ? Path.GetDirectoryName(doc.Path) : Environment.CurrentDirectory;

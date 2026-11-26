@@ -9,8 +9,8 @@ using WinCC.Editor;
 namespace WinCC.Documents
 {
     /// <summary>
-    /// An open file: path, encoding, modified flag, its own editor and tab.
-    /// Files are read as UTF-8 (or 1251 if they are not valid UTF-8) and written back in the same encoding, CRLF lines.
+    /// Открытый файл: путь, кодировка, признак правки, свой редактор и вкладка.
+    /// Файлы читаются как UTF-8 (если в нём не читаются — как 1251) и пишутся обратно в той же кодировке, строки — CRLF.
     /// </summary>
     public class SourceDocument
     {
@@ -20,7 +20,7 @@ namespace WinCC.Documents
         readonly TextBlock nameText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         Button closeButton;
         bool modified;
-        /// <summary>A fixed name given for an untitled file, or null — "untitled N.c" in the current language.</summary>
+        /// <summary>Заданное имя файла без пути или null — тогда «без имени N.c» на языке окна.</summary>
         string fixedUntitledName;
         int untitledNumber;
 
@@ -30,9 +30,9 @@ namespace WinCC.Documents
         public TabItem Tab { get; private set; }
         public string UntitledName { get { return fixedUntitledName ?? Loc.F("Untitled", untitledNumber); } }
 
-        /// <summary>The cross on the tab was clicked.</summary>
+        /// <summary>Щелчок по крестику на вкладке.</summary>
         public event EventHandler CloseRequested;
-        /// <summary>The name or the modified flag changed.</summary>
+        /// <summary>Сменилось имя или признак правки.</summary>
         public event EventHandler StateChanged;
 
         public SourceDocument(string untitledText, string untitledName = null)
@@ -73,7 +73,7 @@ namespace WinCC.Documents
             }
         }
 
-        /// <summary>An untouched new empty file — it may be silently replaced by an opened one.</summary>
+        /// <summary>Пустой новый файл, которого не трогали, — его можно молча заменить открытым.</summary>
         public bool IsPristine { get { return IsUntitled && !IsModified; } }
 
         public void Save() { SaveAs(Path); }
@@ -109,7 +109,7 @@ namespace WinCC.Documents
                 Content = new Icon { Kind = IconKind.Close, Width = 9, Height = 9 },
                 Padding = new Thickness(2),
                 Margin = new Thickness(5, 0, -4, 0),
-                Visibility = Visibility.Hidden,     // the cross shows on the front tab and under the mouse
+                Visibility = Visibility.Hidden,     // крестик — у передней вкладки и под мышью
                 VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = Loc.T("CloseTab"),
                 Focusable = false
@@ -128,7 +128,7 @@ namespace WinCC.Documents
             Tab.MouseLeave += (s, e) => cross();
             System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TabItem.IsSelectedProperty, typeof(TabItem))
                 .AddValueChanged(Tab, (s, e) => cross());
-            // Middle click on the tab closes it
+            // Средняя кнопка мыши по вкладке — закрыть
             Tab.MouseUp += (s, e) =>
             {
                 if (e.ChangedButton == System.Windows.Input.MouseButton.Middle)
@@ -146,7 +146,7 @@ namespace WinCC.Documents
             StateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        /// <summary>The interface language changed: rename an untitled tab, refresh tooltips.</summary>
+        /// <summary>Сменился язык окна: переименовать вкладку «без имени», обновить подсказки.</summary>
         public void RefreshTexts()
         {
             closeButton.ToolTip = Loc.T("CloseTab");
@@ -183,7 +183,7 @@ namespace WinCC.Documents
             return s.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\n", "\r\n");
         }
 
-        /// <summary>Encoding name for the status bar.</summary>
+        /// <summary>Название кодировки для строки состояния.</summary>
         public string EncodingName
         {
             get

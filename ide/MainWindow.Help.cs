@@ -6,12 +6,12 @@ using ThemeLibrary;
 
 namespace WinCC
 {
-    /// <summary>Help button and F1: opens the manual PDF with the program Windows uses for PDF files.</summary>
+    /// <summary>Кнопка «Справка» и F1: открывает «Руководство WinCC.pdf» программой, которая в Windows открывает PDF.</summary>
     public partial class MainWindow
     {
         const string ManualName = "Руководство WinCC.pdf";
 
-        /// <summary>The manual: next to WinCC.exe (installed program) or in docs\руководство (source tree).</summary>
+        /// <summary>Руководство: рядом с WinCC.exe (установленная программа) или в docs\руководство (папка проекта).</summary>
         static string ManualPath
         {
             get

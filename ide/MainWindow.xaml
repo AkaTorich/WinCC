@@ -20,7 +20,7 @@
             <Setter Property="Margin" Value="0,0,7,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
-        <!-- File and bottom-panel tabs: a flat strip without extra space; the selected one gets a background and an accent underline -->
+        <!-- Вкладки файлов и нижней панели: плоская полоса без лишнего места; выбранная — фон и черта акцента снизу -->
         <Style x:Key="CompactTab" TargetType="TabItem">
             <Setter Property="Foreground" Value="{DynamicResource Theme.Tab.Foreground}"/>
             <Setter Property="FontSize" Value="{DynamicResource Theme.FontSize.Small}"/>
@@ -89,9 +89,9 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
+        <!-- Кнопки -->
         <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="8,7" Margin="0,0,0,8">
-            <!-- Button groups wrap to a second row when the window is narrow -->
+            <!-- Группы кнопок переносятся на вторую строку, когда окно узкое -->
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                     <Button x:Name="SettingsButton" Style="{StaticResource ToolButton}" Padding="9,6"
@@ -146,7 +146,7 @@
                 <ColumnDefinition Width="*" MinWidth="360"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Project -->
+            <!-- Проект -->
             <Border x:Name="ProjectBorder" Grid.Column="0" Style="{StaticResource Panel}" Padding="6,8,6,6" Visibility="Collapsed">
                 <pr:ProjectPanel x:Name="ProjectSide"/>
             </Border>
@@ -161,7 +161,7 @@
                     <RowDefinition x:Name="BottomRow" Height="0.36*" MinHeight="120"/>
                 </Grid.RowDefinitions>
 
-                <!-- Files -->
+                <!-- Файлы -->
                 <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="4">
                     <Grid>
                         <TabControl x:Name="Docs" Style="{StaticResource CompactTabs}"/>
@@ -181,7 +181,7 @@
                 <GridSplitter Grid.Row="1" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                               Background="Transparent" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Focusable="False"/>
 
-                <!-- Compiler output and error list -->
+                <!-- Вывод компилятора и список ошибок -->
                 <Border Grid.Row="2" Style="{StaticResource Panel}" Padding="4">
                     <TabControl x:Name="BottomTabs" Style="{StaticResource CompactTabs}">
                         <TabItem x:Name="OutputTab">
@@ -229,7 +229,7 @@
             </Grid>
         </Grid>
 
-        <!-- Status bar -->
+        <!-- Строка состояния -->
         <DockPanel Grid.Row="2" Margin="4,7,4,0" LastChildFill="True">
             <TextBlock x:Name="KindStatus" DockPanel.Dock="Right" Foreground="{DynamicResource Theme.TextDim}" Margin="18,0,0,0"/>
             <TextBlock x:Name="EncodingStatus" DockPanel.Dock="Right" Foreground="{DynamicResource Theme.TextDim}" Margin="18,0,0,0"/>

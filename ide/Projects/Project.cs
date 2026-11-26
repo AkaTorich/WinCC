@@ -9,23 +9,23 @@ using WinCC.Build;
 namespace WinCC.Projects
 {
     /// <summary>
-    /// A WinCC project — a "name.wccproj" file: which files make up the program, its kind, output name and wcc arguments.
-    /// UTF-8 text, "key=value" lines, paths relative to the project folder:
-    ///   kind=Window            kind: Console, Window, Dll
-    ///   output=Calc.exe        output file name (empty — the project name)
-    ///   file=main.c            a project file (one per line, in build order); .rc and .res are resources
-    ///   define=DEBUG=1         macro (-D)
-    ///   include=inc            #include folder (-I)
-    ///   lib=dwmapi             DLL with functions (-l)
-    ///   stack=16               stack in MB (--stack), 0 — default
-    ///   options=-S             other wcc arguments as is
-    /// Lines starting with # are comments and are skipped.
+    /// Проект WinCC — файл «имя.wccproj»: какие файлы входят в программу, её вид, имя готового файла и параметры wcc.
+    /// Текст UTF-8, строки «ключ=значение», пути — от папки проекта:
+    ///   kind=Window            вид: Console, Window, Dll
+    ///   output=Калькулятор.exe имя готового файла (пусто — имя проекта)
+    ///   file=main.c            файл проекта (каждый своей строкой, по порядку сборки); .rc и .res — ресурсы
+    ///   define=DEBUG=1         макрос (-D)
+    ///   include=inc            папка #include (-I)
+    ///   lib=dwmapi             DLL с функциями (-l)
+    ///   stack=16               стек в МБ (--stack), 0 — по умолчанию
+    ///   options=-S             остальные параметры wcc как есть
+    /// Строки с # — пояснения, читаются мимо.
     /// </summary>
     public class Project
     {
         public const string Extension = ".wccproj";
 
-        /// <summary>Files wcc builds into the program (code and resources); others (headers, images) are only listed.</summary>
+        /// <summary>Файлы, которые wcc собирает в программу (код и ресурсы); остальные (заголовки, картинки) — только в списке.</summary>
         static readonly string[] buildExtensions = { ".c", ".asm", ".rc", ".res" };
 
         public string Path { get; private set; }
@@ -43,7 +43,7 @@ namespace WinCC.Projects
         public string Name { get { return System.IO.Path.GetFileNameWithoutExtension(Path); } }
         public string Folder { get { return System.IO.Path.GetDirectoryName(Path); } }
 
-        /// <summary>Output file name: the explicit one, or the project name with the kind's extension.</summary>
+        /// <summary>Имя готового файла: своё или имя проекта с расширением вида.</summary>
         public string OutputName
         {
             get
@@ -63,7 +63,7 @@ namespace WinCC.Projects
             return buildExtensions.Any(e => string.Equals(e, ext, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>Resources: a .rc script or a compiled .res.</summary>
+        /// <summary>Ресурсы: сценарий .rc или готовый .res.</summary>
         public static bool IsResource(string file)
         {
             string ext = System.IO.Path.GetExtension(file);
@@ -82,7 +82,7 @@ namespace WinCC.Projects
 
         public IEnumerable<string> BuildFiles { get { return Files.Where(IsBuildFile); } }
 
-        /// <summary>The path as written in the project: relative to the project folder if the file is inside it, otherwise full.</summary>
+        /// <summary>Путь как он пишется в проекте: от папки проекта, если файл внутри неё, иначе полный.</summary>
         public string Relative(string fullPath)
         {
             string full = System.IO.Path.GetFullPath(fullPath);
@@ -101,7 +101,7 @@ namespace WinCC.Projects
             return Files.FindIndex(f => string.Equals(FullPath(f), full, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>Add a file (full path); one already in the project is not repeated. true — added.</summary>
+        /// <summary>Добавить файл (полный путь); уже входящий не повторяется. true — добавлен.</summary>
         public bool Add(string fullPath)
         {
             if (Contains(fullPath)) return false;
@@ -117,7 +117,7 @@ namespace WinCC.Projects
             return true;
         }
 
-        /// <summary>wcc arguments: files in order, -o, kind, macros, folders, DLLs, stack, the rest.</summary>
+        /// <summary>Параметры wcc: файлы по порядку, -o, вид, макросы, папки, DLL, стек, остальное.</summary>
         public string Arguments()
         {
             var sb = new StringBuilder();
