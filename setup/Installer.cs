@@ -35,7 +35,7 @@ namespace WinCC.Setup
         public const string ProgId = "WinCC.Source";
         public const string Publisher = "О. Кобенко";
         public const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\WinCC";
-        private static readonly string[] Extensions = { ".c", ".h" };
+        private static readonly string[] Extensions = { ".c", ".h", ".wccproj" };
 
         public static string Version
         {
@@ -126,7 +126,7 @@ namespace WinCC.Setup
             }
             if (opt.OpenWith)
             {
-                say("WinCC в «Открыть с помощью» для .c и .h…");
+                say("WinCC в «Открыть с помощью» для .c, .h и .wccproj…");
                 RegisterOpenWith(exe);
             }
 
@@ -305,7 +305,7 @@ namespace WinCC.Setup
             try { SendMessageTimeout((IntPtr)0xffff, 0x001A, UIntPtr.Zero, "Environment", 2, 3000, out r); } catch { }
         }
 
-        // ---------- «Открыть с помощью» для .c и .h (программу по умолчанию не меняет) ----------
+        // ---------- «Открыть с помощью» для .c, .h и проектов .wccproj (программу по умолчанию не меняет) ----------
 
         public static void RegisterOpenWith(string exe)
         {

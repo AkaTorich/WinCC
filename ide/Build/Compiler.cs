@@ -16,7 +16,7 @@ namespace WinCC.Build
         public string NotStarted;
     }
 
-    /// <summary>Запуск wcc.exe, лежащего рядом с WinCC.exe: «wcc файл.c -o файл.exe [--gui | --dll]».</summary>
+    /// <summary>Запуск wcc.exe, лежащего рядом с WinCC.exe: «wcc файл.c -o файл.exe [--gui | --dll]» или с параметрами проекта.</summary>
     public class Compiler
     {
         Process running;
@@ -41,10 +41,10 @@ namespace WinCC.Build
             return sb.ToString();
         }
 
-        /// <summary>Собирает файл. Каждая строка вывода компилятора уходит в onLine (из чужого потока).</summary>
-        public async Task<BuildResult> BuildAsync(string source, ProgramKind kind, Action<string> onLine)
+        /// <summary>Сборка: folder — откуда считаются пути, arguments — параметры wcc, output — что должно получиться.
+        /// Каждая строка вывода компилятора уходит в onLine (из чужого потока).</summary>
+        public async Task<BuildResult> BuildAsync(string folder, string arguments, string output, Action<string> onLine)
         {
-            string output = OutputFor(source, kind);
             var result = new BuildResult { OutputFile = output };
 
             if (!Exists)
@@ -58,9 +58,9 @@ namespace WinCC.Build
                 return result;
             }
 
-            var psi = new ProcessStartInfo(WccPath, Arguments(source, output, kind))
+            var psi = new ProcessStartInfo(WccPath, arguments)
             {
-                WorkingDirectory = Path.GetDirectoryName(source),
+                WorkingDirectory = folder,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,

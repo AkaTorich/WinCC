@@ -6,13 +6,14 @@ using ThemeLibrary;
 namespace WinCC.Editor
 {
     /// <summary>
-    /// Цвета подсветки, взятые из текущей темы: ключевые слова — акцент, типы — второй акцент, строки — «успех»,
+    /// Цвета подсветки, взятые из текущей темы: ключевые слова — акцент, типы — второй акцент, вызовы функций — ярко-зелёные
+    /// (#00E640), объявления функций — фиолетовые (#B06CFF), строки — между «предупреждением» и «опасностью»,
     /// числа — «предупреждение», препроцессор — «опасность» (смягчённая к тексту), комментарии — приглушённый текст.
     /// Пересчитываются при смене темы.
     /// </summary>
     public static class SyntaxColors
     {
-        static readonly Brush[] brushes = new Brush[8];
+        static readonly Brush[] brushes = new Brush[10];
 
         public static Brush CurrentLine { get; private set; }
         public static Brush ErrorLine { get; private set; }
@@ -48,7 +49,9 @@ namespace WinCC.Editor
             brushes[(int)TokenKind.Keyword] = Make(accent);
             brushes[(int)TokenKind.Type] = Make(accent2);
             brushes[(int)TokenKind.Constant] = Make(warning);
-            brushes[(int)TokenKind.String] = Make(success);
+            brushes[(int)TokenKind.String] = Make(Mix(warning, danger, 0.45));
+            brushes[(int)TokenKind.Function] = Make(Color.FromRgb(0x00, 0xE6, 0x40));
+            brushes[(int)TokenKind.FunctionDecl] = Make(Color.FromRgb(0xB0, 0x6C, 0xFF));
             brushes[(int)TokenKind.Comment] = Make(dim);
             brushes[(int)TokenKind.Number] = Make(warning);
             brushes[(int)TokenKind.Preprocessor] = Make(Mix(danger, text, 0.3));

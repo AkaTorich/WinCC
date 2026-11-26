@@ -101,9 +101,10 @@ namespace WinCC.Documents
 
             var close = new Button
             {
-                Content = new Icon { Kind = IconKind.Close, Width = 12, Height = 12 },
-                Padding = new Thickness(3),
-                Margin = new Thickness(8, 0, -4, 0),
+                Content = new Icon { Kind = IconKind.Close, Width = 9, Height = 9 },
+                Padding = new Thickness(2),
+                Margin = new Thickness(5, 0, -4, 0),
+                Visibility = Visibility.Hidden,     // крестик — у передней вкладки и под мышью
                 VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = "Закрыть вкладку",
                 Focusable = false
@@ -112,11 +113,16 @@ namespace WinCC.Documents
             close.Click += (s, e) => CloseRequested?.Invoke(this, EventArgs.Empty);
 
             var header = new StackPanel { Orientation = Orientation.Horizontal };
-            header.Children.Add(new Icon { Kind = IconKind.Code, Width = 14, Height = 14, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+            header.Children.Add(new Icon { Kind = IconKind.Code, Width = 12, Height = 12, Margin = new Thickness(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center });
             header.Children.Add(nameText);
             header.Children.Add(close);
 
             Tab = new TabItem { Header = header, Content = Editor, Tag = this };
+            Action cross = () => close.Visibility = Tab.IsSelected || Tab.IsMouseOver ? Visibility.Visible : Visibility.Hidden;
+            Tab.MouseEnter += (s, e) => cross();
+            Tab.MouseLeave += (s, e) => cross();
+            System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TabItem.IsSelectedProperty, typeof(TabItem))
+                .AddValueChanged(Tab, (s, e) => cross());
             // Средняя кнопка мыши по вкладке — закрыть
             Tab.MouseUp += (s, e) =>
             {

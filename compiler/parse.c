@@ -2120,7 +2120,30 @@ static double eval_double(Node *node)
 
 // ---- expressions ----
 
-// Converts "A op= B" into "tmp = &A, *tmp = *tmp op B".
+// An lvalue whose address has no side effects and costs little: a variable, *p of a variable p,
+// a field of either. "A op= B" of it becomes "A = A op B" (A is still read once and written once).
+static int plain_lvalue(Node *n)
+{
+    if (n->kind == ND_VAR)
+        return !n->var->ty->is_atomic;
+    if (n->kind == ND_MEMBER)
+        return !n->member->is_bitfield && plain_lvalue(n->lhs);
+    if (n->kind == ND_DEREF)
+        return n->lhs->kind == ND_VAR;
+    return 0;
+}
+
+static Node *copy_lvalue(Node *n)
+{
+    Node *c = new_node(n->kind, n->tok);
+    *c = *n;
+    c->next = 0;
+    if (n->kind == ND_MEMBER || n->kind == ND_DEREF)
+        c->lhs = copy_lvalue(n->lhs);
+    return c;
+}
+
+// Converts "A op= B" into "tmp = &A, *tmp = *tmp op B" (a plain A: "A = A op B").
 static Node *to_assign(Node *binary)
 {
     add_type(binary->lhs);
@@ -2164,6 +2187,8 @@ static Node *to_assign(Node *binary)
         loop->next = new_unary(ND_EXPR_STMT, new_var_node(nw, tok), tok);
         return se;
     }
+    if (plain_lvalue(binary->lhs))
+        return new_binary(ND_ASSIGN, copy_lvalue(binary->lhs), binary, tok);
     Obj *var = new_lvar("", pointer_to(binary->lhs->ty));
     Node *expr1 = new_binary(ND_ASSIGN, new_var_node(var, tok), new_unary(ND_ADDR, binary->lhs, tok), tok);
     Node *expr2 = new_binary(ND_ASSIGN, new_unary(ND_DEREF, new_var_node(var, tok), tok),

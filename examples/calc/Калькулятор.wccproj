@@ -1,0 +1,6 @@
+# Проект WinCC
+kind=Window
+file=main.c
+file=engine.c
+file=draw.c
+file=calc.h

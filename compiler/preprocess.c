@@ -961,7 +961,7 @@ static void pragma(Token *at, Token *c, Token **cur)
         "inline_recursion", "detect_mismatch", "fenv_access", "float_control", "fp_contract", "managed",
         "unmanaged", "auto_inline", "check_stack", "runtime_checks", "strict_gs_check", "deprecated",
         "include_alias", "loop", "vtordisp", "conform", "component", "alloc_text", "execution_character_set",
-        "setlocale", "system_header", "diagnostic", "unroll", "omp", 0,
+        "setlocale", "system_header", "diagnostic", "unroll", "omp", "code_page", 0,
     };
     for (int i = 0; quiet[i]; i++)
         if (cc_equal(c, quiet[i]))

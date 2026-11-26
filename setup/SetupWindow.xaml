@@ -101,7 +101,7 @@
                     <CheckBox x:Name="StartBox" Style="{StaticResource Option}" IsChecked="True" Content="Ярлык в меню «Пуск»"/>
                     <CheckBox x:Name="PathBox" Style="{StaticResource Option}" IsChecked="True" Content="Команда wcc в любой консоли"
                               ToolTip="Папка WinCC добавляется в переменную PATH пользователя"/>
-                    <CheckBox x:Name="OpenWithBox" Style="{StaticResource Option}" IsChecked="True" Content="WinCC в «Открыть с помощью» для .c и .h"
+                    <CheckBox x:Name="OpenWithBox" Style="{StaticResource Option}" IsChecked="True" Content="WinCC в «Открыть с помощью» для .c, .h и .wccproj"
                               ToolTip="Программа, которая открывает .c сейчас, остаётся прежней"/>
                     <CheckBox x:Name="LaunchBox" Style="{StaticResource Option}" IsChecked="True" Content="Запустить WinCC после установки"/>
                 </UniformGrid>

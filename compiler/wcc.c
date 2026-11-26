@@ -1,6 +1,7 @@
 // wcc: the WinCC compiler on the command line.
 //   wcc hello.c                        -> hello.exe (console; WinMain without main: a windowed program)
 //   wcc a.c b.c util.asm -o prog.exe   several sources, one program
+//   wcc app.c app.rc                   with resources (an icon, a version, dialogs...; a .res of rc.exe too)
 //   wcc --gui app.c                    a windowed program (no console)
 //   wcc --dll lib.c                    -> lib.dll
 //   -l user32   -I folder   -D NAME=1   -S (the assembly text to prog.s)   --run (start it after)
@@ -12,7 +13,7 @@
 #include "cc.h"
 #include "winlink.h"
 
-#define WCC_VERSION "1.2.0"
+#define WCC_VERSION "1.3.0"
 
 // ---- the compiler's host hooks ----
 
@@ -113,6 +114,31 @@ static char *read_text(const char *name)
     return buf;
 }
 
+// A file as it is (icons, pictures, .res): beside the source as named, then in the -I folders.
+static char *g_inc[32];             // -I folders, then the WinCC include folder
+static int g_ninc;
+
+static const u8 *read_raw(const char *name, int *size)
+{
+    HANDLE h = CreateFileW(wide(name), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    DWORD n = GetFileSize(h, 0), got = 0;
+    u8 *buf = cc_alloc((size_t)n + 1);
+    ReadFile(h, buf, n, &got, 0);
+    CloseHandle(h);
+    *size = (int)got;
+    return buf;
+}
+
+static const u8 *read_binary(const char *name, int *size)
+{
+    const u8 *d = read_raw(name, size);
+    for (int i = 0; !d && i < g_ninc; i++)
+        d = read_raw(cc_format("%s\\%s", g_inc[i], name), size);
+    return d;
+}
+
 static int write_file(const char *name, const void *data, size_t size)
 {
     HANDLE h = CreateFileW(wide(name), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
@@ -123,9 +149,6 @@ static int write_file(const char *name, const void *data, size_t size)
     CloseHandle(h);
     return ok && put == size;
 }
-
-static char *g_inc[32];             // -I folders, then the WinCC include folder
-static int g_ninc;
 
 // #include "x.h": the name as it is (beside the source: the preprocessor already joined it), then
 // the folders (-I, then WinCC's include); #include <x.h>: the folders first -- a windows.h of one's
@@ -148,7 +171,7 @@ const char *cc_read_file(const char *name)
 static void usage(void)
 {
     printf("WinCC %s — компилятор Си для Windows\n\n"
-           "  wcc файл.c [ещё.c файл.asm ...] [параметры]\n\n"
+           "  wcc файл.c [ещё.c файл.asm ресурсы.rc ресурсы.res ...] [параметры]\n\n"
            "  -o имя        что получится (по умолчанию — имя первого файла .exe / .dll)\n"
            "  --console     консольная программа (так по умолчанию)\n"
            "  --gui         оконная программа, без консоли (так же, если есть WinMain и нет main)\n"
@@ -337,6 +360,7 @@ int wmain(int argc, wchar_t **wargv)
     g_home = home;
     cc_source_lib = source_lib;
     cc_warn_hook = print_warning;
+    cc_read_binary = read_binary;
 
     // the library: compiled into every program after the program's own sources
     int first_lib = nsrc;
@@ -355,7 +379,7 @@ int wmain(int argc, wchar_t **wargv)
     for (int i = 0; i < nlib; i++)
         winlink_add(libs[i]);
     static const char *defaults[] = { "kernel32", "user32", "gdi32", "comdlg32", "shell32", "advapi32",
-                                      "comctl32", "ole32", "winmm", "ws2_32", 0 };
+                                      "comctl32", "ole32", "winmm", "ws2_32", "version", 0 };
 
     cc_target_win = 1;
     CcWinTarget t = { 0 };

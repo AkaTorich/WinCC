@@ -112,7 +112,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
 
 ```
 > wcc окно.c
-Готово: окно.exe — оконная программа, 35328 байт, 125 мс
+Готово: окно.exe — оконная программа, 20992 байт, 125 мс
 ```
 
 @ 09-первое-окно.png | Первое окно: класс, окно, цикл сообщений и ответ на WM_PAINT
@@ -444,7 +444,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
 
 ```
 > wcc счётчик.c
-Готово: счётчик.exe — оконная программа, 97280 байт, 188 мс
+Готово: счётчик.exe — оконная программа, 53760 байт, 188 мс
 > счётчик.exe пример.txt
 ```
 

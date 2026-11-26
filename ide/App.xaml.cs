@@ -16,18 +16,20 @@ namespace WinCC
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-            ThemeSelector.ApplySaved("WinCC");
+            ThemeManager.Apply("Cyberpunk");       // у окна одна тема — «Киберпанк»
             var args = e.Args;
 
-            // --window <файл.png> [ШxВ] [тема:Id] [пусто]: снимок окна без показа — с образцом кода, выводом и ошибками
+            // --window <файл.png> [ШxВ] [пусто] [проект:файл.wccproj]: снимок окна без показа —
+            // с образцом кода, выводом и ошибками или с открытым проектом
             if (args.Length >= 2 && args[0] == "--window")
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 double w = 1280, h = 820;
                 bool empty = false;
+                string projectFile = null;
                 foreach (string a in args.Skip(2))
                 {
-                    if (a.StartsWith("тема:")) ThemeManager.Apply(a.Substring(5));
+                    if (a.StartsWith("проект:")) projectFile = a.Substring(7);
                     else if (a == "пусто") empty = true;
                     else if (a.Contains("x"))
                     {
@@ -37,7 +39,8 @@ namespace WinCC
                     }
                 }
                 var win = new MainWindow(true) { Width = w, Height = h };
-                if (!empty)
+                if (projectFile != null) win.OpenProject(projectFile, true);
+                else if (!empty)
                 {
                     var hello = win.NewFile(Samples.Hello, "привет.c");
                     win.NewFile(Samples.Window, "окно.c");

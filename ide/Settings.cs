@@ -7,9 +7,10 @@ using WinCC.Build;
 namespace WinCC
 {
     /// <summary>
-    /// Что окно помнит между запусками: вид программы, открытые файлы, какой из них был впереди, высоту нижней панели
+    /// Что окно помнит между запусками: вид программы, открытые файлы, какой из них был впереди, проект, недавние проекты,
+    /// панель проекта (показана ли, ширина), высоту нижней панели
     /// (долей от высоты редактора — так она уменьшается вместе с окном).
-    /// Файл %APPDATA%\WinCC\settings.txt, строки «ключ=значение». Тема хранится библиотекой тем отдельно.
+    /// Файл %APPDATA%\WinCC\settings.txt, строки «ключ=значение». Тема у окна одна — «Киберпанк».
     /// </summary>
     public class Settings
     {
@@ -17,6 +18,12 @@ namespace WinCC
         public readonly List<string> Files = new List<string>();
         public int Active = -1;
         public double BottomShare = 0.36;
+        /// <summary>Открытый проект (.wccproj) или null.</summary>
+        public string Project;
+        /// <summary>Недавние проекты, свежий первым.</summary>
+        public readonly List<string> Recent = new List<string>();
+        public double PanelWidth = 250;
+        public bool PanelShown = true;
 
         static string FilePath
         {
@@ -41,6 +48,13 @@ namespace WinCC
                         case "kind": s.Kind = ProgramKinds.Parse(value); break;
                         case "file": if (value.Length > 0) s.Files.Add(value); break;
                         case "active": if (int.TryParse(value, out n)) s.Active = n; break;
+                        case "project": s.Project = value.Length > 0 ? value : null; break;
+                        case "recent": if (value.Length > 0) s.Recent.Add(value); break;
+                        case "panel": s.PanelShown = value != "0"; break;
+                        case "panelwidth":
+                            if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d))
+                                s.PanelWidth = Math.Max(170, Math.Min(800, d));
+                            break;
                         case "bottom":
                             if (double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d))
                                 s.BottomShare = Math.Max(0.1, Math.Min(3, d));
@@ -61,6 +75,10 @@ namespace WinCC
                 foreach (string f in Files) sb.AppendLine("file=" + f);
                 sb.AppendLine("active=" + Active);
                 sb.AppendLine("bottom=" + BottomShare.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+                if (Project != null) sb.AppendLine("project=" + Project);
+                foreach (string r in Recent) sb.AppendLine("recent=" + r);
+                sb.AppendLine("panel=" + (PanelShown ? "1" : "0"));
+                sb.AppendLine("panelwidth=" + PanelWidth.ToString("0", System.Globalization.CultureInfo.InvariantCulture));
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
             }

@@ -1,0 +1,5 @@
+# Проект WinCC
+kind=Window
+file=main.c
+file=pages.c
+file=demo.h

@@ -3,7 +3,8 @@ using System.Collections.Generic;
 namespace WinCC.Editor
 {
     /// <summary>Что за кусок текста — от этого зависит его цвет.</summary>
-    public enum TokenKind : byte { Plain, Keyword, Type, Constant, String, Comment, Number, Preprocessor }
+    /// Function — вызов функции, FunctionDecl — её объявление или определение (и макрос с параметрами).
+    public enum TokenKind : byte { Plain, Keyword, Type, Constant, String, Comment, Number, Preprocessor, Function, FunctionDecl }
 
     public struct Token
     {
@@ -43,6 +44,13 @@ namespace WinCC.Editor
             "WPARAM", "LPARAM", "LRESULT", "MSG", "WNDCLASSA", "WNDCLASSW", "RECT", "POINT", "PAINTSTRUCT"
         };
 
+        /// <summary>Слова, после которых имя с «(» — объявление функции, а не вызов: «static int f(», «extern f(».</summary>
+        static readonly HashSet<string> declWords = new HashSet<string>
+        {
+            "static", "extern", "inline", "__inline", "__forceinline", "const", "volatile", "_Noreturn", "struct", "union",
+            "enum", "__stdcall", "__cdecl", "__fastcall", "__int64", "constexpr"
+        };
+
         static readonly HashSet<string> constants = new HashSet<string>
         {
             "NULL", "true", "false", "nullptr", "EOF", "TRUE", "FALSE", "stdin", "stdout", "stderr",
@@ -71,6 +79,11 @@ namespace WinCC.Editor
             }
 
             bool directive = (state & InDirective) != 0;
+            bool defineLine = false;            // «#define имя(» — макрос с параметрами: объявление
+            // что было перед именем в этой строке: последнее и предпоследнее слово или знак
+            string prev = null, prev2 = null;
+            TokenKind prevKind = TokenKind.Plain, prev2Kind = TokenKind.Plain;
+            bool prevWord = false, prev2Word = false;
             if (!directive)
             {
                 int j = i;
@@ -85,6 +98,7 @@ namespace WinCC.Editor
                     string word = text.Substring(j + 1, k - j - 1).Trim();
                     i = k;
                     directive = true;
+                    defineLine = word == "define";
                     if (word == "include")
                     {
                         // <stdio.h> — как строка
@@ -131,6 +145,7 @@ namespace WinCC.Editor
                 {
                     int stop = SkipQuoted(text, i, end, c);
                     Add(output, i, stop - i, TokenKind.String);
+                    Remember(ref prev, ref prev2, ref prevKind, ref prev2Kind, ref prevWord, ref prev2Word, "\"", TokenKind.String, false);
                     i = stop;
                     continue;
                 }
@@ -138,6 +153,7 @@ namespace WinCC.Editor
                 {
                     int stop = SkipNumber(text, i, end);
                     Add(output, i, stop - i, TokenKind.Number);
+                    Remember(ref prev, ref prev2, ref prevKind, ref prev2Kind, ref prevWord, ref prev2Word, "0", TokenKind.Number, false);
                     i = stop;
                     continue;
                 }
@@ -160,7 +176,23 @@ namespace WinCC.Editor
                     else if (types.Contains(word)) kind = TokenKind.Type;
                     else if (constants.Contains(word)) kind = TokenKind.Constant;
                     else if (directive && (word == "defined" || word == "__has_include")) kind = TokenKind.Preprocessor;
+                    else
+                    {
+                        // имя перед «(» — функция: объявление (перед ним тип, или оно с начала строки, или #define)
+                        // или вызов (всё остальное)
+                        int n = k;
+                        while (n < end && (text[n] == ' ' || text[n] == '\t')) n++;
+                        if (n < end && text[n] == '(')
+                        {
+                            bool typeBefore = prevWord && (prevKind == TokenKind.Type || prevKind == TokenKind.Plain || declWords.Contains(prev));
+                            bool pointerBefore = !prevWord && prev != null && prev.Trim('*').Length == 0 && prev2Word &&
+                                                 (prev2Kind == TokenKind.Type || prev2Kind == TokenKind.Plain || declWords.Contains(prev2));
+                            bool lineStart = prev == null && (directive ? defineLine : i == start);
+                            kind = typeBefore || pointerBefore || lineStart ? TokenKind.FunctionDecl : TokenKind.Function;
+                        }
+                    }
                     Add(output, i, k - i, kind);
+                    Remember(ref prev, ref prev2, ref prevKind, ref prev2Kind, ref prevWord, ref prev2Word, word, kind, true);
                     i = k;
                     continue;
                 }
@@ -175,11 +207,19 @@ namespace WinCC.Editor
                 }
                 if (i == s) i++;
                 Add(output, s, i - s, TokenKind.Plain);
+                Remember(ref prev, ref prev2, ref prevKind, ref prev2Kind, ref prevWord, ref prev2Word, text.Substring(s, i - s), TokenKind.Plain, false);
             }
 
             if (directive && (newState & InBlockComment) == 0 && EndsWithBackslash(text, start, end))
                 newState |= InDirective;
             return newState;
+        }
+
+        static void Remember(ref string prev, ref string prev2, ref TokenKind prevKind, ref TokenKind prev2Kind,
+                             ref bool prevWord, ref bool prev2Word, string text, TokenKind kind, bool word)
+        {
+            prev2 = prev; prev2Kind = prevKind; prev2Word = prevWord;
+            prev = text; prevKind = kind; prevWord = word;
         }
 
         static void Add(List<Token> output, int start, int length, TokenKind kind)

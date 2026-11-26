@@ -1063,6 +1063,10 @@ SHORT GetAsyncKeyState(int key);
 BOOL GetKeyboardState(PBYTE keys);
 UINT MapVirtualKeyA(UINT code, UINT type);
 UINT MapVirtualKeyW(UINT code, UINT type);
+#define KEYEVENTF_EXTENDEDKEY 0x0001
+#define KEYEVENTF_KEYUP 0x0002
+#define KEYEVENTF_UNICODE 0x0004
+#define KEYEVENTF_SCANCODE 0x0008
 void keybd_event(BYTE vk, BYTE scan, DWORD flags, ULONG_PTR extra);
 void mouse_event(DWORD flags, DWORD dx, DWORD dy, DWORD data, ULONG_PTR extra);
 BOOL RegisterHotKey(HWND hwnd, int id, UINT mods, UINT vk);

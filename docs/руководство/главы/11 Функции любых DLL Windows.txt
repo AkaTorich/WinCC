@@ -164,7 +164,7 @@ int main(int argc, char **argv)
 
 ```
 > wcc dirsize.c
-Готово: dirsize.exe — консольная программа, 68608 байт, 157 мс
+Готово: dirsize.exe — консольная программа, 36352 байт, 157 мс
 > dirsize C:\Windows\Fonts
 C:\Windows\Fonts: 376 файлов, 397 МБ (416324412 байт)
 ```

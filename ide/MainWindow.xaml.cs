@@ -13,7 +13,7 @@ namespace WinCC
 {
     /// <summary>
     /// Главное окно: кнопки, вкладки файлов, нижняя панель с выводом компилятора и ошибками, строка состояния.
-    /// Работа с файлами — MainWindow.Files.cs, сборка и запуск — MainWindow.Build.cs.
+    /// Работа с файлами — MainWindow.Files.cs, сборка и запуск — MainWindow.Build.cs, проект и панель сбоку — MainWindow.Project.cs.
     /// </summary>
     public partial class MainWindow : ThemedWindow
     {
@@ -32,7 +32,7 @@ namespace WinCC
             foreach (ProgramKind k in ProgramKinds.All)
                 KindBox.Items.Add(new ComboBoxItem { Content = ProgramKinds.Title(k), Tag = k });
             KindBox.SelectedIndex = Array.IndexOf(ProgramKinds.All, settings.Kind);
-            KindBox.SelectionChanged += (s, e) => { settings.Kind = CurrentKind; UpdateStatus(); };
+            KindBox.SelectionChanged += (s, e) => OnKindChosen();
             BottomRow.Height = new GridLength(settings.BottomShare, GridUnitType.Star);
 
             NewButton.Click += (s, e) => NewFile();
@@ -53,6 +53,7 @@ namespace WinCC
             Drop += OnDrop;
             Activated += (s, e) => UpdateCompilerState();
 
+            InitProjectPanel();
             UpdateCompilerState();
             UpdateErrors();
             UpdateEmptyState();
@@ -82,12 +83,13 @@ namespace WinCC
             get { return Docs.Items.OfType<TabItem>().Select(t => t.Tag as SourceDocument).Where(d => d != null); }
         }
 
-        /// <summary>Открыть файлы прошлого раза; если их нет — один новый файл с заготовкой.</summary>
+        /// <summary>Открыть проект и файлы прошлого раза; если файлов нет — один новый файл с заготовкой.</summary>
         public void RestoreSession()
         {
             foreach (string f in settings.Files)
                 if (File.Exists(f)) OpenPath(f, false);
             if (settings.Active >= 0 && settings.Active < Docs.Items.Count) Docs.SelectedIndex = settings.Active;
+            if (settings.Project != null && File.Exists(settings.Project)) OpenProject(settings.Project, Docs.Items.Count == 0);
             if (Docs.Items.Count == 0) NewFile();
         }
 
@@ -103,18 +105,21 @@ namespace WinCC
             bool empty = Docs.Items.Count == 0;
             EmptyHint.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
             Docs.Visibility = empty ? Visibility.Hidden : Visibility.Visible;
+            bool buildable = (!empty || project != null) && !building;
             SaveButton.IsEnabled = !empty && !building;
-            BuildButton.IsEnabled = !empty && !building;
-            RunButton.IsEnabled = !empty && !building;
+            BuildButton.IsEnabled = buildable;
+            RunButton.IsEnabled = buildable;
         }
 
         void UpdateStatus()
         {
             var doc = Current;
-            PathStatus.Text = doc == null ? "" : doc.Path ?? "Новый файл — сохраните его перед сборкой";
+            PathStatus.Text = doc != null ? doc.Path ?? "Новый файл — сохраните его перед сборкой"
+                            : project != null ? project.Path : "";
             CaretStatus.Text = doc == null ? "" : "Строка " + doc.Editor.CaretRow + ", столбец " + doc.Editor.CaretColumn;
             EncodingStatus.Text = doc == null ? "" : doc.EncodingName;
-            KindStatus.Text = "Вид: " + ProgramKinds.Title(CurrentKind);
+            KindStatus.Text = (project != null ? "Проект: " + project.Name + " · " : "") + "Вид: " + ProgramKinds.Title(CurrentKind);
+            ProjectSide.SetActiveFile(doc != null ? doc.Path : null);
         }
 
         void UpdateCompilerState()
@@ -141,6 +146,7 @@ namespace WinCC
             else if (mods == ModifierKeys.Control && key == Key.B) StartBuild(false);
             else if (mods == ModifierKeys.None && key == Key.F5) StartBuild(true);
             else if (mods == ModifierKeys.None && key == Key.F1) OpenManual();
+            else if (mods == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.E) ShowProjectPanel(!ProjectPanelShown);
             else handled = false;
             if (handled) e.Handled = true;
         }
@@ -175,7 +181,9 @@ namespace WinCC
             foreach (var doc in Documents)
                 if (!doc.IsUntitled) settings.Files.Add(doc.Path);
             settings.Active = Docs.SelectedIndex;
-            settings.Kind = CurrentKind;
+            if (project == null) settings.Kind = CurrentKind;
+            settings.Project = project != null ? project.Path : null;
+            if (ProjectPanelShown && ProjectColumn.ActualWidth > 0) settings.PanelWidth = ProjectColumn.ActualWidth;
             if (BottomRow.ActualHeight > 0 && EditorRow.ActualHeight > 0)
                 settings.BottomShare = BottomRow.ActualHeight / EditorRow.ActualHeight;
             settings.Save();

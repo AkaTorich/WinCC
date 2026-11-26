@@ -11,7 +11,8 @@ namespace WinCC
     /// <summary>Вкладки файлов: новый, открыть, сохранить, закрыть.</summary>
     public partial class MainWindow
     {
-        const string FileFilter = "Исходники Си (*.c; *.h)|*.c;*.h|Все файлы (*.*)|*.*";
+        const string FileFilter = "Исходники Си (*.c; *.h)|*.c;*.h|Ресурсы (*.rc)|*.rc|Все файлы (*.*)|*.*";
+        const string OpenFilter = "Исходники Си, ресурсы и проекты (*.c; *.h; *.rc; *.wccproj)|*.c;*.h;*.rc;*.wccproj|Проекты WinCC (*.wccproj)|*.wccproj|Все файлы (*.*)|*.*";
 
         /// <summary>Заготовка нового файла.</summary>
         public const string NewFileText =
@@ -34,16 +35,22 @@ namespace WinCC
 
         void OpenFiles()
         {
-            var dlg = new OpenFileDialog { Filter = FileFilter, Multiselect = true, Title = "Открыть файл" };
+            var dlg = new OpenFileDialog { Filter = OpenFilter, Multiselect = true, Title = "Открыть файл" };
             string folder = DefaultFolder();
             if (folder != null) dlg.InitialDirectory = folder;
             if (dlg.ShowDialog(this) != true) return;
             foreach (string f in dlg.FileNames) OpenPath(f, true);
         }
 
-        /// <summary>Открыть файл во вкладке; уже открытый — просто показать. Нетронутый пустой «без имени» заменяется.</summary>
+        /// <summary>Открыть файл во вкладке; уже открытый — просто показать. Нетронутый пустой «без имени» заменяется.
+        /// Файл .wccproj открывается как проект (вкладки нет — null).</summary>
         public SourceDocument OpenPath(string path, bool activate)
         {
+            if (Projects.Project.IsProjectFile(path))
+            {
+                OpenProject(path, true);
+                return null;
+            }
             var open = Documents.FirstOrDefault(d => d.IsSamePath(path));
             if (open != null)
             {
@@ -142,6 +149,7 @@ namespace WinCC
         {
             var doc = Current;
             if (doc != null && doc.Path != null) return Path.GetDirectoryName(doc.Path);
+            if (project != null) return project.Folder;
             var withPath = Documents.FirstOrDefault(d => d.Path != null);
             if (withPath != null) return Path.GetDirectoryName(withPath.Path);
             string examples = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "examples"));

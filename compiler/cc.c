@@ -95,6 +95,8 @@ static int ends_with(const char *s, const char *suffix)
     return 1;
 }
 
+static int is_resource_file(const char *name) { return ends_with(name, ".rc") || ends_with(name, ".res"); }
+
 // Front end shared by cc_build and cc_build_dll: sources -> assembly text.
 static char *compile_to_asm(const CcSource *sources, int count)
 {
@@ -110,6 +112,8 @@ static char *compile_to_asm(const CcSource *sources, int count)
             asm_len += cc_strlen(sources[i].text) + cc_strlen(sources[i].name) + 24;
             continue;
         }
+        if (is_resource_file(sources[i].name))
+            continue;
         Token *t = cc_preprocess(cc_tokenize(sources[i].name, sources[i].text));
         for (; t->kind != TK_EOF; t = t->next) {
             t->unit = i + 1;
@@ -168,7 +172,7 @@ int cc_build(const CcSource *sources, int count, const CcSymbol *externs, CcImag
     cc_last_error[0] = 0;
     if (cc_setjmp(&g_jmp))
         return 0;
-    char *all = compile_to_asm(sources, count);
+    char *all = cc_peephole(compile_to_asm(sources, count));
     if (asm_text)
         *asm_text = all;
     cc_assemble_program(all, externs, out);
@@ -238,11 +242,23 @@ int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget 
         cc_first_lib_unit = 0;
         return 0;
     }
+    // resources first: .rc scripts and .res files of rc.exe
+    cc_resources_reset();
+    for (int i = 0; i < count; i++) {
+        if (ends_with(sources[i].name, ".rc"))
+            cc_compile_rc(sources[i].name, sources[i].text);
+        else if (ends_with(sources[i].name, ".res"))
+            cc_read_res(sources[i].name);
+    }
+    CcResource *res;
+    t->nres = cc_resources(&res);
+    t->res = res;
     cc_first_lib_unit = first_lib > 0 && first_lib < count ? first_lib + 1 : 0;
     char *all = compile_to_asm(sources, count);
     cc_first_lib_unit = 0;
     all = cc_join(all, "", win_entry_stub(t, all));
     all = cc_strip_unused(all);         // the library's functions the program never reaches stay out
+    all = cc_peephole(all);
     if (asm_text)
         *asm_text = all;
     // not a tail call: an assembler error comes back to cc_setjmp above, so this frame must still be here

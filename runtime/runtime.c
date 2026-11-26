@@ -76,6 +76,7 @@ static int sign_of(double x) { return (int)(dbits(x) >> 63); }
 size_t rt_strlen(const char *s);
 void *rt_memcpy(void *d, const void *s, size_t n);
 void *rt_memset(void *d, int c, size_t n);
+void *rt_memmove(void *d, const void *s, size_t n);
 void *rt_malloc(size_t n);
 void rt_free(void *p);
 void *rt_realloc(void *p, size_t n);
@@ -1968,7 +1969,9 @@ int rt_scanf(const char *fmt, ...)
 
 // ---- strings and memory ----
 
+#ifndef __WINCC__                       // WinCC: rtasm.asm (SSE2)
 size_t rt_strlen(const char *s) { size_t n = 0; while (s[n]) n++; return n; }
+#endif
 
 size_t rt_strnlen(const char *s, size_t max) { size_t n = 0; while (n < max && s[n]) n++; return n; }
 
@@ -2138,6 +2141,7 @@ size_t rt_strxfrm(char *d, const char *s, size_t n)
     return len;
 }
 
+#ifndef __WINCC__                       // WinCC: rtasm.asm (rep movsb, rep stosb)
 void *rt_memcpy(void *d, const void *s, size_t n)
 {
     u8 *dd = d;
@@ -2161,6 +2165,7 @@ void *rt_memset(void *d, int c, size_t n)
     for (size_t i = 0; i < n; i++) dd[i] = (u8)c;
     return d;
 }
+#endif
 
 int rt_memcmp(const void *a, const void *b, size_t n)
 {
@@ -5726,6 +5731,87 @@ double rt_scalbln32(double x, long e) { return rt_scalbln(x, e); }
 int rt_fseek32(RtFile *f, long off, int whence) { return rt_fseek(f, off, whence); }
 long rt_ftell32(RtFile *f) { return (long)rt_ftell(f); }
 
+// Microsoft's bounds-checked copies (strcpy_s and others): the text does not fit
+// or a pointer is null -- the buffer gets "" and the call returns EINVAL or ERANGE
+// (MSVC would also end the program; here the program decides).
+#define MS_EINVAL 22
+#define MS_ERANGE 34
+#define MS_TRUNCATE ((size_t)-1)
+#define MS_COPY_FUNCS(T, P)                                                                  \
+int P##cpy_s(T *d, size_t size, const T *s)                                                  \
+{                                                                                            \
+    if (!d || !size) return MS_EINVAL;                                                       \
+    if (!s) { d[0] = 0; return MS_EINVAL; }                                                  \
+    for (size_t i = 0; i < size; i++) if ((d[i] = s[i]) == 0) return 0;                      \
+    d[0] = 0; return MS_ERANGE;                                                              \
+}                                                                                            \
+int P##cat_s(T *d, size_t size, const T *s)                                                  \
+{                                                                                            \
+    if (!d || !size) return MS_EINVAL;                                                       \
+    if (!s) { d[0] = 0; return MS_EINVAL; }                                                  \
+    size_t n = 0;                                                                            \
+    while (n < size && d[n]) n++;                                                            \
+    if (n == size) { d[0] = 0; return MS_EINVAL; }                                           \
+    for (size_t i = 0; n + i < size; i++) if ((d[n + i] = s[i]) == 0) return 0;              \
+    d[0] = 0; return MS_ERANGE;                                                              \
+}                                                                                            \
+int P##ncpy_s(T *d, size_t size, const T *s, size_t count)                                   \
+{                                                                                            \
+    if (!d || !size) return MS_EINVAL;                                                       \
+    if (!s) { d[0] = 0; return count ? MS_EINVAL : 0; }                                      \
+    size_t i = 0;                                                                            \
+    for (; i < count && s[i]; i++) {                                                         \
+        if (i + 1 >= size) {                                                                 \
+            if (count == MS_TRUNCATE) { d[i] = 0; return 80; }   /* STRUNCATE */             \
+            d[0] = 0; return MS_ERANGE;                                                      \
+        }                                                                                    \
+        d[i] = s[i];                                                                         \
+    }                                                                                        \
+    d[i] = 0; return 0;                                                                      \
+}                                                                                            \
+int P##ncat_s(T *d, size_t size, const T *s, size_t count)                                   \
+{                                                                                            \
+    if (!d || !size) return MS_EINVAL;                                                       \
+    size_t n = 0;                                                                            \
+    while (n < size && d[n]) n++;                                                            \
+    if (n == size) { d[0] = 0; return MS_EINVAL; }                                           \
+    if (!s) { if (count) { d[0] = 0; return MS_EINVAL; } return 0; }                         \
+    int r = P##ncpy_s(d + n, size - n, s, count);                                            \
+    if (r == MS_ERANGE) d[0] = 0;                                                            \
+    return r;                                                                                \
+}
+MS_COPY_FUNCS(char, rt_ms_str)
+MS_COPY_FUNCS(RtWchar, rt_ms_wcs)
+
+int rt_ms_memcpy_s(void *d, size_t size, const void *s, size_t n)
+{
+    if (!n) return 0;
+    if (!d) return MS_EINVAL;
+    if (!s || size < n) { rt_memset(d, 0, size); return !s ? MS_EINVAL : MS_ERANGE; }
+    rt_memcpy(d, s, n);
+    return 0;
+}
+
+int rt_ms_memmove_s(void *d, size_t size, const void *s, size_t n)
+{
+    if (!n) return 0;
+    if (!d || !s) return MS_EINVAL;
+    if (size < n) return MS_ERANGE;
+    rt_memmove(d, s, n);
+    return 0;
+}
+
+// _wcsicmp and _wcsnicmp: without case (towlower of the library, any alphabet)
+int rt_ms_wcsnicmp(const RtWchar *a, const RtWchar *b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        u32 x = rt_towlower(a[i]), y = rt_towlower(b[i]);
+        if (x != y || !x) return x < y ? -1 : x > y;
+    }
+    return 0;
+}
+int rt_ms_wcsicmp(const RtWchar *a, const RtWchar *b) { return rt_ms_wcsnicmp(a, b, (size_t)-1); }
+
 #define F(name, fn) ".alias " name ", " #fn "\n"
 asm(
     F("labs", rt_labs) F("atol", rt_atol) F("ldiv", rt_ldiv) F("strtol", rt_strtol) F("strtoul", rt_strtoul)
@@ -5736,6 +5822,11 @@ asm(
     F("_fseeki64", rt_fseek) F("_ftelli64", rt_ftell) F("fseeko", rt_fseek) F("ftello", rt_ftell)
     F("_aligned_malloc", rt__aligned_malloc) F("_aligned_free", rt_free) F("_msize", rt__msize)
     F("_expand", rt__expand)
+    F("strcpy_s", rt_ms_strcpy_s) F("strcat_s", rt_ms_strcat_s) F("strncpy_s", rt_ms_strncpy_s)
+    F("strncat_s", rt_ms_strncat_s) F("wcscpy_s", rt_ms_wcscpy_s) F("wcscat_s", rt_ms_wcscat_s)
+    F("wcsncpy_s", rt_ms_wcsncpy_s) F("wcsncat_s", rt_ms_wcsncat_s) F("memcpy_s", rt_ms_memcpy_s)
+    F("memmove_s", rt_ms_memmove_s) F("_wcsicmp", rt_ms_wcsicmp) F("_wcsnicmp", rt_ms_wcsnicmp)
+    F("wcsicmp", rt_ms_wcsicmp) F("wcsnicmp", rt_ms_wcsnicmp) F("_wcsdup", rt_wcsdup)
 #else
 #define F(name, fn) { name, (void *)fn },
 

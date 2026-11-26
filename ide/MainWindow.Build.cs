@@ -25,8 +25,16 @@ namespace WinCC
 
         async void StartBuild(bool run)
         {
-            if (building || Current == null) return;
-            await BuildCurrent(run);
+            if (building) return;
+            if (project != null) await BuildProject(run);
+            else if (Current != null) await BuildCurrent(run);
+        }
+
+        /// <summary>Сохранить изменённые файлы перед сборкой: заголовки тоже могли поменяться.</summary>
+        void SaveModifiedFiles(SourceDocument except)
+        {
+            foreach (var other in Documents.Where(d => d != except && d.IsModified && !d.IsUntitled).ToList())
+                SaveDocument(other, false);
         }
 
         async Task BuildCurrent(bool run)
@@ -34,31 +42,66 @@ namespace WinCC
             var doc = Current;
             if (doc == null) return;
             if (doc.IsUntitled && !SaveDocument(doc, false)) return;
-            // Изменённые файлы сохраняются перед сборкой: заголовки тоже могли поменяться
             if (doc.IsModified && !SaveDocument(doc, false)) return;
-            foreach (var other in Documents.Where(d => d != doc && d.IsModified && !d.IsUntitled).ToList())
-                SaveDocument(other, false);
+            SaveModifiedFiles(doc);
 
             ProgramKind kind = CurrentKind;
             string source = doc.Path;
             string output = Compiler.OutputFor(source, kind);
-            buildFolder = Path.GetDirectoryName(source);
+            await RunBuild(Path.GetDirectoryName(source), Compiler.Arguments(source, output, kind), output, kind, run,
+                "Сборка: " + Path.GetFileName(source) + " → " + Path.GetFileName(output) + " (" + ProgramKinds.Title(kind) + ")",
+                "wcc " + Compiler.Arguments(Path.GetFileName(source), Path.GetFileName(output), kind));
+        }
 
+        /// <summary>Сборка проекта целиком: все его .c и .asm одной программой, параметры — из проекта.</summary>
+        async Task BuildProject(bool run)
+        {
+            var p = project;
+            SaveModifiedFiles(null);
+            if (!p.BuildFiles.Any())
+            {
+                BeginOutput();
+                AppendOutput("В проекте «" + p.Name + "» нет файлов .c — собирать нечего.");
+                return;
+            }
+            var missing = p.BuildFiles.Where(f => !File.Exists(p.FullPath(f))).ToList();
+            if (missing.Count > 0)
+            {
+                BeginOutput();
+                AppendOutput("Файлов проекта нет на диске:");
+                foreach (string f in missing) AppendOutput("    " + p.FullPath(f));
+                return;
+            }
+            string args = p.Arguments();
+            await RunBuild(p.Folder, args, p.OutputPath, p.Kind, run,
+                "Сборка проекта «" + p.Name + "»: файлов " + p.BuildFiles.Count() + " → " + p.OutputName + " (" + ProgramKinds.Title(p.Kind) + ")",
+                "wcc " + args);
+        }
+
+        /// <summary>Очистить вывод, ошибки и пометки в редакторах.</summary>
+        void BeginOutput()
+        {
             messages.Clear();
             looseLines.Clear();
             foreach (var d in Documents) d.Editor.SetErrorLines(null);
             UpdateErrors();
             OutputBox.Clear();
             BottomTabs.SelectedItem = OutputTab;
-            AppendOutput("Сборка: " + Path.GetFileName(source) + " → " + Path.GetFileName(output) + " (" + ProgramKinds.Title(kind) + ")");
-            AppendOutput("> wcc " + Compiler.Arguments(Path.GetFileName(source), Path.GetFileName(output), kind));
+        }
+
+        async Task RunBuild(string folder, string arguments, string output, ProgramKind kind, bool run, string title, string commandLine)
+        {
+            buildFolder = folder;
+            BeginOutput();
+            AppendOutput(title);
+            AppendOutput("> " + commandLine);
 
             building = true;
             UpdateEmptyState();
             BuildResult result;
             try
             {
-                result = await compiler.BuildAsync(source, kind, line =>
+                result = await compiler.BuildAsync(folder, arguments, output, line =>
                     Dispatcher.BeginInvoke(new Action(() => OnCompilerLine(line))));
             }
             finally

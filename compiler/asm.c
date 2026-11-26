@@ -67,6 +67,8 @@ typedef struct SehScope {
 typedef struct SehProc {
     int start, end;             // in .text
     int kind;                   // 0 a function (push rbp; mov rbp, rsp), 1 a funclet (push rbp; push rbx; sub rsp, 8; mov rbx, rsp)
+    int nregs, pad;             // a function: push rbp; push regs[0..nregs); sub rsp, 8 when pad; mov rbp, rsp
+    u8 regs[8];
     SehScope *scopes, *tail;
     int nscopes;
 } SehProc;
@@ -1797,6 +1799,19 @@ static void seh_directive(Asm *as, const char *m, int mlen, const char *p)
         *f = z;
         f->start = f->end = off;
         f->kind = (int)k;
+        // ".seh_proc 0, PAD, R1, R2...": the registers pushed after rbp (their numbers: rbx 3, rsi 6...)
+        p = skip_sp(p);
+        if (*p == ',') {
+            i64 v = 0;
+            p = skip_sp(p + 1);
+            parse_number(as, &p, &v);
+            f->pad = (int)v;
+            for (p = skip_sp(p); *p == ',' && f->nregs < 8; p = skip_sp(p)) {
+                p = skip_sp(p + 1);
+                parse_number(as, &p, &v);
+                f->regs[f->nregs++] = (u8)v;
+            }
+        }
         return;
     }
     if (!as->nproc)
@@ -2820,23 +2835,113 @@ static const char g_manifest[] =
     "<requestedExecutionLevel level=\"asInvoker\" uiAccess=\"false\"/></requestedPrivileges></security></trustInfo>\r\n"
     "</assembly>\r\n";
 
-// A resource tree of one manifest (type 24, id 1, language 0): its bytes at p,
-// the section at rva; its size.
-static int win_resources(u8 *p, int rva, const char *manifest)
+// The resource tree (.rsrc): type -> name -> language -> data. In each directory the named
+// entries come first (in order of their names), then the numbered ones (in order of numbers).
+// Layout: all directories, the data entries, the names, then the data (each 8-aligned).
+// With p = 0 it only counts; returns the size.
+static int res_order(CcResId a, CcResId b)
 {
-    int n = cc_strlen(manifest);
-    for (int level = 0; level < 3; level++) {          // three directories of one id entry each
-        u8 *d = p + level * 24;
-        wr16(d + 14, 1);                                // NumberOfIdEntries
-        static const u32 ids[3] = { 24, 1, 0 };         // RT_MANIFEST, CREATEPROCESS_MANIFEST_RESOURCE_ID, neutral
-        wr32(d + 16, ids[level]);
-        wr32(d + 20, level < 2 ? 0x80000000u | (u32)((level + 1) * 24) : 72u);
+    if (a.str && !b.str) return -1;
+    if (!a.str && b.str) return 1;
+    if (!a.str) return a.num < b.num ? -1 : a.num > b.num;
+    for (int i = 0; i < a.len && i < b.len; i++)
+        if (a.str[i] != b.str[i]) return a.str[i] < b.str[i] ? -1 : 1;
+    return a.len < b.len ? -1 : a.len > b.len;
+}
+
+static int res_less(const CcResource *a, const CcResource *b)
+{
+    int c = res_order(a->type, b->type);
+    if (!c) c = res_order(a->name, b->name);
+    if (!c) c = a->lang < b->lang ? -1 : a->lang > b->lang;
+    return c < 0;
+}
+
+// a directory entry's name: the id, or (named) the place of the name, written at *sp
+static void res_entry_name(u8 *p, u8 *e, CcResId id, int *sp)
+{
+    if (!id.str) {
+        if (p) wr32(e, id.num);
+        return;
     }
-    wr32(p + 72, (u32)(rva + 88));                      // the data entry: an RVA, a size
-    wr32(p + 76, (u32)n);
+    if (p) {
+        wr32(e, 0x80000000u | (u32)*sp);
+        wr16(p + *sp, (unsigned)id.len);
+        for (int i = 0; i < id.len; i++) wr16(p + *sp + 2 + 2 * i, id.str[i]);
+    }
+    *sp += 2 + 2 * id.len;
+}
+
+static int win_resources(u8 *p, int rva, const CcResource *in, int n)
+{
+    CcResource *r = cc_alloc(sizeof(CcResource) * (size_t)(n + 1));
+    for (int i = 0; i < n; i++) {          // sorted, a few dozen at most
+        int k = i;
+        while (k > 0 && res_less(&in[i], &r[k - 1])) { r[k] = r[k - 1]; k--; }
+        r[k] = in[i];
+    }
+    int ntypes = 0, nnames = 0;
+    for (int i = 0; i < n; i++) {
+        int new_type = !i || res_order(r[i].type, r[i - 1].type);
+        ntypes += new_type;
+        nnames += new_type || res_order(r[i].name, r[i - 1].name);
+    }
+    int de = 16 + 8 * ntypes + 16 * ntypes + 8 * nnames + 16 * nnames + 8 * n;   // the data entries
+    int sp = de + 16 * n;                                                      // the names
+    // the names' size first: the data comes after them
+    int names_end = sp;
+    for (int i = 0; i < n; i++) {
+        if (r[i].type.str && (!i || res_order(r[i].type, r[i - 1].type))) names_end += 2 + 2 * r[i].type.len;
+        if (r[i].name.str && (!i || res_order(r[i].type, r[i - 1].type) || res_order(r[i].name, r[i - 1].name)))
+            names_end += 2 + 2 * r[i].name.len;
+    }
+    int dp = (names_end + 7) & ~7;
+    if (!p) {
+        for (int i = 0; i < n; i++) dp = (dp + r[i].size + 7) & ~7;
+        return dp;
+    }
+    int named_types = 0;
     for (int i = 0; i < n; i++)
-        p[88 + i] = (u8)manifest[i];
-    return 88 + n;
+        if (r[i].type.str && (!i || res_order(r[i].type, r[i - 1].type))) named_types++;
+    wr16(p + 12, (unsigned)named_types);
+    wr16(p + 14, (unsigned)(ntypes - named_types));
+    int type_dir = 16 + 8 * ntypes, ti = 0, dei = 0;
+    for (int i = 0; i < n;) {
+        int j = i;
+        while (j < n && !res_order(r[j].type, r[i].type)) j++;
+        u8 *e = p + 16 + 8 * ti++;
+        res_entry_name(p, e, r[i].type, &sp);
+        wr32(e + 4, 0x80000000u | (u32)type_dir);
+        int nn = 0, named = 0;
+        for (int k = i; k < j; k++)
+            if (k == i || res_order(r[k].name, r[k - 1].name)) { nn++; named += r[k].name.str != 0; }
+        wr16(p + type_dir + 12, (unsigned)named);
+        wr16(p + type_dir + 14, (unsigned)(nn - named));
+        int name_dir = type_dir + 16 + 8 * nn, ni = 0;
+        for (int k = i; k < j;) {
+            int m = k;
+            while (m < j && !res_order(r[m].name, r[k].name)) m++;
+            u8 *ne = p + type_dir + 16 + 8 * ni++;
+            res_entry_name(p, ne, r[k].name, &sp);
+            wr32(ne + 4, 0x80000000u | (u32)name_dir);
+            wr16(p + name_dir + 14, (unsigned)(m - k));
+            for (int q = k; q < m; q++) {
+                u8 *le = p + name_dir + 16 + 8 * (q - k);
+                wr32(le, r[q].lang);
+                wr32(le + 4, (u32)(de + 16 * dei));
+                u8 *d = p + de + 16 * dei++;
+                wr32(d, (u32)(rva + dp));
+                wr32(d + 4, (u32)r[q].size);
+                for (int b = 0; b < r[q].size; b++) p[dp + b] = r[q].data[b];
+                dp = (dp + r[q].size + 7) & ~7;
+            }
+            name_dir += 16 + 8 * (m - k);
+            k = m;
+        }
+        type_dir = name_dir;
+        i = j;
+    }
+    return dp;
 }
 
 // A name the program uses and does not define: which DLL has it? All the
@@ -2871,6 +2976,39 @@ static int win_exported(Asm *as, Label *l)
     if (as->win->exe)
         return l->exported;                     // an .exe exports only what asks for it
     return !as->any_export || l->exported;      // a DLL: __declspec(dllexport), or all it defines
+}
+
+// Unwind info of "push rbp; push r...; [sub rsp, 8]; mov rbp, rsp" (codes in reverse order of the prologue:
+// SET_FPREG, ALLOC_SMALL, PUSH_NONVOL of each register, PUSH_NONVOL rbp); the count of codes made even.
+static int unwind_codes(const SehProc *f) { return 2 + f->nregs + f->pad; }
+
+static int unwind_size(const SehProc *f)
+{
+    int n = unwind_codes(f);
+    return 4 + 2 * (n + (n & 1));
+}
+
+static void write_unwind(u8 *u, const SehProc *f)
+{
+    int ends[8], off = 1;               // after push rbp
+    for (int i = 0; i < f->nregs; i++) {
+        off += f->regs[i] >= 8 ? 2 : 1;
+        ends[i] = off;
+    }
+    int alloc_end = off + (f->pad ? 4 : 0);
+    int prolog = alloc_end + 3;
+    u[0] = 1;
+    u[1] = (u8)prolog;
+    u[2] = (u8)unwind_codes(f);
+    u[3] = 0x05;                        // frame register rbp, offset 0
+    u8 *c = u + 4;
+    *c++ = (u8)prolog; *c++ = 0x03;                         // UWOP_SET_FPREG
+    if (f->pad) { *c++ = (u8)alloc_end; *c++ = 0x02; }      // UWOP_ALLOC_SMALL 8
+    for (int i = f->nregs - 1; i >= 0; i--) {
+        *c++ = (u8)ends[i];
+        *c++ = (u8)(f->regs[i] << 4);                       // UWOP_PUSH_NONVOL
+    }
+    *c++ = 1; *c++ = 0x50;                                  // push rbp
 }
 
 int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_size)
@@ -2985,13 +3123,28 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         for (int i = 0; i < npf; i++)
             if (as->procs[i].nscopes)
                 pdata_size += 16 + 16 * as->procs[i].nscopes;
+            else if (as->procs[i].nregs)
+                pdata_size += unwind_size(&as->procs[i]);
     }
     int pdata_rva = tls_rva + (tls_size ? pe_align(tls_size, SA) : 0);
 
-    // .rsrc: the manifest of an .exe
-    const char *manifest = t->exe ? g_manifest : 0;
+    // .rsrc: the program's resources and, in an .exe, WinCC's manifest (type 24, id 1) -- unless it has its own
+    CcResource *res = cc_alloc(sizeof(CcResource) * (size_t)(t->nres + 1));
+    int nres = 0, own_manifest = 0;
+    for (int i = 0; i < t->nres; i++) {
+        res[nres++] = t->res[i];
+        if (!t->res[i].type.str && t->res[i].type.num == 24 && !t->res[i].name.str && t->res[i].name.num == 1)
+            own_manifest = 1;
+    }
+    if (t->exe && !own_manifest) {
+        CcResource *m = &res[nres++];
+        m->type.num = 24;
+        m->name.num = 1;
+        m->data = (const u8 *)g_manifest;
+        m->size = cc_strlen(g_manifest);
+    }
     int rsrc_rva = pdata_rva + (pdata_size ? pe_align(pdata_size, SA) : 0);
-    int rsrc_cap = manifest ? 88 + cc_strlen(manifest) : 0;
+    int rsrc_cap = nres ? win_resources(0, 0, res, nres) : 0;
     int reloc_rva = rsrc_rva + pe_align(rsrc_cap, SA);
     int all_raw = text_size + data_raw + tls_size;
     int reloc_cap = pe_align(all_raw / 4 + 12 * (all_raw / 4096 + 2) + 64, SA);
@@ -3042,6 +3195,12 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
             u8 *rf = pd + 12 * i;
             wr32(rf, (u32)(text_rva + f->start));
             wr32(rf + 4, (u32)(text_rva + f->end));
+            if (!f->nscopes && f->nregs) {
+                wr32(rf + 8, (u32)(pdata_rva + o2));
+                write_unwind(pd + o2, f);
+                o2 += unwind_size(f);
+                continue;
+            }
             if (!f->nscopes) {
                 wr32(rf + 8, (u32)(pdata_rva + (f->kind ? info_fl : info_fn)));
                 continue;
@@ -3111,7 +3270,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
             buf[data_rva + own_off + k] = (u8)own[k];
     }
 
-    int rsrc_size = manifest ? win_resources(buf + rsrc_rva, rsrc_rva, manifest) : 0;
+    int rsrc_size = nres ? win_resources(buf + rsrc_rva, rsrc_rva, res, nres) : 0;
 
     // base relocations, grouped by 4 KB page
     int reloc_size = 0;

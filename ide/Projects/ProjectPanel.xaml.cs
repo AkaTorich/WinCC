@@ -1,0 +1,224 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using ThemeLibrary;
+using WinCC.Build;
+
+namespace WinCC.Projects
+{
+    /// <summary>
+    /// Панель проекта сбоку окна: имя проекта, файлы по группам (исходники, заголовки, ресурсы, прочие), что получится при сборке.
+    /// Без проекта — кнопки «Новый проект», «Открыть проект» и недавние проекты.
+    /// Сама ничего не меняет: просьбы уходят окну событиями (MainWindow.Project.cs).
+    /// </summary>
+    public partial class ProjectPanel : UserControl
+    {
+        Project project;
+        string activeFile;
+
+        public event Action<string> OpenFileRequested;
+        public event Action<string> RemoveFileRequested;
+        public event Action<string[]> FilesDropped;
+        public event Action AddFilesRequested;
+        public event Action NewFileRequested;
+        public event Action PropertiesRequested;
+        public event Action CloseProjectRequested;
+        public event Action NewProjectRequested;
+        /// <summary>Открыть проект: путь из недавних или null — спросить файл.</summary>
+        public event Action<string> OpenProjectRequested;
+
+        public ProjectPanel()
+        {
+            InitializeComponent();
+            AddButton.Click += (s, e) => AddFilesRequested?.Invoke();
+            NoFilesAddButton.Click += (s, e) => AddFilesRequested?.Invoke();
+            NewFileButton.Click += (s, e) => NewFileRequested?.Invoke();
+            PropertiesButton.Click += (s, e) => PropertiesRequested?.Invoke();
+            CloseButton.Click += (s, e) => CloseProjectRequested?.Invoke();
+            NewProjectButton.Click += (s, e) => NewProjectRequested?.Invoke();
+            OpenProjectButton.Click += (s, e) => OpenProjectRequested?.Invoke(null);
+
+            Tree.MouseDoubleClick += (s, e) =>
+            {
+                string path = FileOf(e.OriginalSource as DependencyObject);
+                if (path != null) { e.Handled = true; OpenFileRequested?.Invoke(path); }
+            };
+            Tree.KeyDown += Tree_KeyDown;
+            Tree.PreviewMouseRightButtonDown += (s, e) =>
+            {
+                var item = ItemOf(e.OriginalSource as DependencyObject);
+                if (item != null) item.IsSelected = true;
+            };
+
+            RecentList.MouseUp += (s, e) =>
+            {
+                var item = ItemsControl.ContainerFromElement(RecentList, e.OriginalSource as DependencyObject) as ListBoxItem;
+                if (item != null && e.ChangedButton == MouseButton.Left) OpenProjectRequested?.Invoke(item.Tag as string);
+            };
+            RecentList.KeyDown += (s, e) =>
+            {
+                var item = RecentList.SelectedItem as ListBoxItem;
+                if (e.Key == Key.Enter && item != null) { e.Handled = true; OpenProjectRequested?.Invoke(item.Tag as string); }
+            };
+
+            DragOver += (s, e) =>
+            {
+                e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+                e.Handled = true;
+            };
+            Drop += (s, e) =>
+            {
+                var files = e.Data.GetData(DataFormats.FileDrop) as string[];
+                if (files == null) return;
+                e.Handled = true;
+                FilesDropped?.Invoke(files);
+            };
+        }
+
+        public Project Project
+        {
+            get { return project; }
+            set { project = value; Refresh(); }
+        }
+
+        /// <summary>Файл активной вкладки — в дереве выделяется жирным.</summary>
+        public void SetActiveFile(string path)
+        {
+            activeFile = path;
+            foreach (var item in FileItems())
+                ((TextBlock)((StackPanel)item.Header).Children[1]).FontWeight = IsActive(item.Tag as string) ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+
+        public void SetRecent(IEnumerable<string> paths)
+        {
+            RecentList.Items.Clear();
+            foreach (string p in paths)
+            {
+                var row = new StackPanel { Orientation = Orientation.Horizontal };
+                row.Children.Add(new Icon { Kind = IconKind.Layers, Width = 13, Height = 13, Margin = new Thickness(0, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center });
+                row.Children.Add(new TextBlock { Text = Path.GetFileNameWithoutExtension(p), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+                RecentList.Items.Add(new ListBoxItem { Content = row, Tag = p, ToolTip = p, Padding = new Thickness(6, 4, 6, 4) });
+            }
+            RecentTitle.Visibility = RecentList.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>Перерисовать дерево по проекту (после правки списка или свойств).</summary>
+        public void Refresh()
+        {
+            ProjectView.Visibility = project != null ? Visibility.Visible : Visibility.Collapsed;
+            EmptyView.Visibility = project != null ? Visibility.Collapsed : Visibility.Visible;
+            Tree.Items.Clear();
+            if (project == null) return;
+
+            NameText.Text = project.Name;
+            NameText.ToolTip = project.Path;
+            OutputText.Text = ProgramKinds.Title(project.Kind) + " → " + project.OutputName;
+            OutputText.ToolTip = project.OutputPath;
+
+            var sources = project.Files.Where(f => Project.IsBuildFile(f) && !Project.IsResource(f)).ToList();
+            var headers = project.Files.Where(Project.IsHeader).ToList();
+            var resources = project.Files.Where(Project.IsResource).ToList();
+            var other = project.Files.Where(f => !Project.IsBuildFile(f) && !Project.IsHeader(f)).ToList();
+            AddGroup("Исходники", IconKind.Code, sources);
+            AddGroup("Заголовки", IconKind.FileText, headers);
+            AddGroup("Ресурсы", IconKind.Image, resources);
+            AddGroup("Прочие", IconKind.File, other);
+            NoFilesView.Visibility = project.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            SetActiveFile(activeFile);
+        }
+
+        void AddGroup(string title, IconKind icon, List<string> files)
+        {
+            if (files.Count == 0) return;
+            var group = new TreeViewItem { Header = Row(IconKind.Folder, title + " (" + files.Count + ")", true), IsExpanded = true, Focusable = false };
+            foreach (string f in files)
+            {
+                string full = project.FullPath(f);
+                bool exists = File.Exists(full);
+                var item = new TreeViewItem { Header = Row(exists ? icon : IconKind.Warning, f, exists), Tag = full };
+                item.ToolTip = exists ? full : "Файла нет на диске: " + full;
+                item.ContextMenu = FileMenu(full);
+                group.Items.Add(item);
+            }
+            Tree.Items.Add(group);
+        }
+
+        static StackPanel Row(IconKind icon, string text, bool normal)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var mark = new Icon { Kind = icon, Width = 14, Height = 14, Margin = new Thickness(0, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center };
+            var label = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
+            if (!normal)
+            {
+                mark.SetResourceReference(Icon.ForegroundProperty, "Theme.Warning");
+                label.SetResourceReference(TextBlock.ForegroundProperty, "Theme.TextDim");
+            }
+            row.Children.Add(mark);
+            row.Children.Add(label);
+            return row;
+        }
+
+        ContextMenu FileMenu(string full)
+        {
+            var menu = new ContextMenu();
+            menu.Items.Add(MakeItem("Открыть", IconKind.FolderOpen, () => OpenFileRequested?.Invoke(full)));
+            menu.Items.Add(MakeItem("Убрать из проекта", IconKind.Minus, () => RemoveFileRequested?.Invoke(full)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeItem("Показать в папке", IconKind.Folder, () => ShowInFolder(full)));
+            return menu;
+        }
+
+        static MenuItem MakeItem(string text, IconKind icon, Action click)
+        {
+            var item = new MenuItem { Header = text, Icon = new Icon { Kind = icon, Width = 14, Height = 14 } };
+            item.Click += (s, e) => click();
+            return item;
+        }
+
+        static void ShowInFolder(string full)
+        {
+            try
+            {
+                if (File.Exists(full)) System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + full + "\"");
+                else if (Directory.Exists(Path.GetDirectoryName(full))) System.Diagnostics.Process.Start("explorer.exe", "\"" + Path.GetDirectoryName(full) + "\"");
+            }
+            catch (Exception) { }
+        }
+
+        void Tree_KeyDown(object sender, KeyEventArgs e)
+        {
+            var item = Tree.SelectedItem as TreeViewItem;
+            string path = item != null ? item.Tag as string : null;
+            if (path == null) return;
+            if (e.Key == Key.Enter) { e.Handled = true; OpenFileRequested?.Invoke(path); }
+            else if (e.Key == Key.Delete) { e.Handled = true; RemoveFileRequested?.Invoke(path); }
+        }
+
+        bool IsActive(string path)
+        {
+            return path != null && activeFile != null && string.Equals(path, activeFile, StringComparison.OrdinalIgnoreCase);
+        }
+
+        IEnumerable<TreeViewItem> FileItems()
+        {
+            return Tree.Items.OfType<TreeViewItem>().SelectMany(g => g.Items.OfType<TreeViewItem>());
+        }
+
+        static TreeViewItem ItemOf(DependencyObject d)
+        {
+            while (d != null && !(d is TreeViewItem))
+                d = d is System.Windows.Media.Visual || d is System.Windows.Media.Media3D.Visual3D ? System.Windows.Media.VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
+            return d as TreeViewItem;
+        }
+
+        static string FileOf(DependencyObject d)
+        {
+            var item = ItemOf(d);
+            return item != null ? item.Tag as string : null;
+        }
+    }
+}

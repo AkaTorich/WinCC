@@ -169,3 +169,94 @@ InterlockedCompareExchange64:
     mov rax, r8
     lock cmpxchg qword ptr [rcx], rdx
     ret
+
+; ---- memory and strings with the processor's own string instructions (runtime.c has them in C
+; for DynastyOS); rsi and rdi are callee-saved: kept in r9 / r10 ----
+
+.gc
+.local rt_memcpy
+; void *rt_memcpy(void *d, const void *s, size_t n)
+rt_memcpy:
+    mov rax, rcx
+    mov r9, rdi
+    mov r10, rsi
+    mov rdi, rcx
+    mov rsi, rdx
+    mov rcx, r8
+    rep movsb
+    mov rdi, r9
+    mov rsi, r10
+    ret
+
+.gc
+.local rt_memmove
+; void *rt_memmove(void *d, const void *s, size_t n): backwards when d is inside [s, s+n)
+rt_memmove:
+    mov rax, rcx
+    mov r9, rdi
+    mov r10, rsi
+    mov rdi, rcx
+    mov rsi, rdx
+    mov rcx, r8
+    cmp rdi, rsi
+    jbe 1f
+    lea r11, [rsi+rcx]
+    cmp rdi, r11
+    jae 1f
+    lea rsi, [rsi+rcx-1]
+    lea rdi, [rdi+rcx-1]
+    std
+    rep movsb
+    cld
+    jmp 2f
+1:
+    rep movsb
+2:
+    mov rdi, r9
+    mov rsi, r10
+    ret
+
+.gc
+.local rt_memset
+; void *rt_memset(void *d, int c, size_t n)
+rt_memset:
+    mov r9, rdi
+    mov r10, rcx
+    mov rdi, rcx
+    mov eax, edx
+    mov rcx, r8
+    rep stosb
+    mov rdi, r9
+    mov rax, r10
+    ret
+
+.gc
+.local rt_strlen
+; size_t rt_strlen(const char *s): 16 bytes at a time from an aligned address (never past the page)
+rt_strlen:
+    mov rdx, rcx
+    mov rax, rcx
+    and rax, -16
+    pxor xmm0, xmm0
+    movdqa xmm1, xmmword ptr [rax]
+    pcmpeqb xmm1, xmm0
+    pmovmskb r8d, xmm1
+    and ecx, 15
+    shr r8d, cl
+    test r8d, r8d
+    jnz 3f
+1:
+    add rax, 16
+    movdqa xmm1, xmmword ptr [rax]
+    pcmpeqb xmm1, xmm0
+    pmovmskb r8d, xmm1
+    test r8d, r8d
+    jz 1b
+    bsf r8d, r8d
+    add rax, r8
+    sub rax, rdx
+    ret
+3:
+    bsf eax, r8d
+    ret
+

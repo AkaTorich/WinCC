@@ -6,6 +6,7 @@
 #include <stdarg.h>
 
 typedef unsigned char      u8;
+typedef unsigned short     u16;
 typedef unsigned int       u32;
 typedef unsigned long long u64;
 typedef long long          i64;
@@ -171,6 +172,7 @@ struct Obj {
     int is_tls;                 // _Thread_local, __declspec(thread): one per thread (the .tls section)
     int is_selectany;           // __declspec(selectany): several sources may define it, one stays
     int indirect;               // a local whose slot holds the address of its memory (a VLA, align > 16)
+    int reg;                    // a local kept in a register (codegen: 1 rbx, 2 rsi, 3 rdi, 4..7 r12..r15), 0 in memory
     // globals
     char *init_data;
     struct Reloc *rel;
@@ -184,6 +186,8 @@ struct Obj {
     Obj *seh_xptr, *seh_code, *seh_abn;    // __try: EXCEPTION_POINTERS* (filter), the code, AbnormalTermination
     int is_variadic;
     Obj *va_area;
+    int nsave, save_pad;        // registers of its locals: pushed after rbp (save[]), and 8 bytes more to keep rbp 16-aligned
+    int save[7];
     // placement after codegen
     u8 *address;
 };
@@ -277,6 +281,18 @@ int cc_assemble_program(const char *text, const CcSymbol *externs, CcImage *out)
 int cc_assemble_pe(const char *text, const CcSymbol *externs, const char *dll_name,
                    u8 **out, u64 *out_size);
 
+// A resource of a Windows program: its type and name are numbers or UTF-16 names (str, len units).
+typedef struct { u32 num; const u16 *str; int len; } CcResId;
+typedef struct { CcResId type, name; u16 lang; const u8 *data; int size; } CcResource;
+int  cc_res_id_equal(CcResId a, CcResId b);
+// rc.c: a .rc script (its text in UTF-8) or a .res of rc.exe adds to the list; cc_resources gives it
+// (with the string tables); cc_resources_reset empties it. Files it names come through cc_read_binary.
+void cc_compile_rc(const char *name, const char *text);
+void cc_read_res(const char *name);
+int  cc_resources(CcResource **out);
+void cc_resources_reset(void);
+extern const u8 *(*cc_read_binary)(const char *name, int *size);
+
 // A Windows program or DLL (WinCC): the library is inside it, names it does not
 // define come from the system's DLLs (dll_of says which DLL exports a name).
 typedef struct {
@@ -286,6 +302,8 @@ typedef struct {
     const char *dll_name;       // a DLL's own name, for its export table
     const char *(*dll_of)(const char *name, int len);
     u64 stack_reserve;          // 0 = 1 MB
+    const CcResource *res;      // resources of .rc and .res files (cc_build_win fills them in)
+    int nres;
 } CcWinTarget;
 int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_size);
 
@@ -323,5 +341,6 @@ extern int cc_first_lib_unit;       // codegen: units from this number on are th
 extern int (*cc_source_lib)(const char *name, const CcSource **files);
 extern int cc_pragma_subsystem;     // #pragma comment(linker, "/SUBSYSTEM:WINDOWS|CONSOLE"): 2 or 3, 0 = none
 char *cc_strip_unused(const char *asm_text);    // strip.c: without the .gc pieces nothing reaches
+char *cc_peephole(const char *asm_text);        // peephole.c: push/pop pairs into moves, jumps to the next line out
 extern char cc_last_error[512];
 extern const char *cc_last_loc;     // the error's place in the source text, or 0

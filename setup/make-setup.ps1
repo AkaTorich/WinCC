@@ -29,7 +29,7 @@ foreach ($dir in "runtime", "include", "lib") {
         $items.Add(@($_.FullName, $_.FullName.Substring($root.Length + 1).Replace('\', '/')))
     }
 }
-Get-ChildItem "$root\examples" -Recurse -File -Include *.c, *.h | ForEach-Object {
+Get-ChildItem "$root\examples" -Recurse -File -Include *.c, *.h, *.wccproj | ForEach-Object {
     $items.Add(@($_.FullName, $_.FullName.Substring($root.Length + 1).Replace('\', '/')))
 }
 $zipPath = "$setup\payload.zip"

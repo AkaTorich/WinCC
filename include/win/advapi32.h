@@ -58,6 +58,40 @@ LSTATUS RegEnumValueA(HKEY key, DWORD index, LPSTR name, LPDWORD name_size, LPDW
 LSTATUS RegEnumValueW(HKEY key, DWORD index, LPWSTR name, LPDWORD name_size, LPDWORD reserved, LPDWORD type,
                       LPBYTE data, LPDWORD size);
 LSTATUS RegCloseKey(HKEY key);
+
+// process and thread tokens (am I elevated, who am I)
+#define TOKEN_ASSIGN_PRIMARY 0x0001
+#define TOKEN_DUPLICATE 0x0002
+#define TOKEN_IMPERSONATE 0x0004
+#define TOKEN_QUERY 0x0008
+#define TOKEN_QUERY_SOURCE 0x0010
+#define TOKEN_ADJUST_PRIVILEGES 0x0020
+#define TOKEN_ADJUST_GROUPS 0x0040
+#define TOKEN_ADJUST_DEFAULT 0x0080
+#define TOKEN_ADJUST_SESSIONID 0x0100
+#define TOKEN_READ 0x00020008
+#define TOKEN_WRITE 0x000200E0
+#define TOKEN_ALL_ACCESS 0x000F01FF
+
+typedef enum _TOKEN_INFORMATION_CLASS {
+    TokenUser = 1, TokenGroups, TokenPrivileges, TokenOwner, TokenPrimaryGroup, TokenDefaultDacl, TokenSource,
+    TokenType, TokenImpersonationLevel, TokenStatistics, TokenRestrictedSids, TokenSessionId,
+    TokenGroupsAndPrivileges, TokenSessionReference, TokenSandBoxInert, TokenAuditPolicy, TokenOrigin,
+    TokenElevationType, TokenLinkedToken, TokenElevation, TokenHasRestrictions, TokenAccessInformation,
+    TokenVirtualizationAllowed, TokenVirtualizationEnabled, TokenIntegrityLevel, TokenUIAccess,
+    TokenMandatoryPolicy, TokenLogonSid, TokenIsAppContainer
+} TOKEN_INFORMATION_CLASS, *PTOKEN_INFORMATION_CLASS;
+
+typedef enum _TOKEN_ELEVATION_TYPE {
+    TokenElevationTypeDefault = 1, TokenElevationTypeFull, TokenElevationTypeLimited
+} TOKEN_ELEVATION_TYPE, *PTOKEN_ELEVATION_TYPE;
+
+typedef struct _TOKEN_ELEVATION { DWORD TokenIsElevated; } TOKEN_ELEVATION, *PTOKEN_ELEVATION;
+
+BOOL OpenProcessToken(HANDLE process, DWORD access, PHANDLE token);
+BOOL OpenThreadToken(HANDLE thread, DWORD access, BOOL as_self, PHANDLE token);
+BOOL GetTokenInformation(HANDLE token, TOKEN_INFORMATION_CLASS cls, LPVOID info, DWORD size, PDWORD needed);
+
 BOOL GetUserNameA(LPSTR buf, LPDWORD size);
 BOOL GetUserNameW(LPWSTR buf, LPDWORD size);
 
