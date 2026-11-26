@@ -188,6 +188,28 @@ static int utf8_enc(u32 c, char *out)
     return 4;
 }
 
+// ---- what happens at the end of a Windows program ----
+// A program gets the end only when it uses something that needs it: console output,
+// a file, atexit. The first such call sets __wcc_at_end (start.c); __wcc_finish calls it
+// before ExitProcess. A program that uses none of them ends with ExitProcess alone.
+// Files are written out at the end only by a program that opened one (need_files_end):
+// a program that only prints does not get the file code.
+#ifdef __WINCC__
+extern void (*__wcc_at_end)(void);
+extern void (*__wcc_flush_all)(void);
+static void lib_end(void);
+static void lib_flush_all(void);
+static void (*g_flush_files)(void);
+static void need_end(void)
+{
+    __wcc_at_end = lib_end;
+    __wcc_flush_all = lib_flush_all;
+}
+static void flush_files(void);
+#else
+static void need_end(void) {}
+#endif
+
 // ---- console output: bytes collect here and go out as whole UTF-8 characters ----
 
 static char g_con[520];
@@ -221,6 +243,8 @@ static void con_put(char c)
 {
     if (!c)
         return;                 // the console takes C strings
+    if (!g_con_len)
+        need_end();             // what is left in g_con goes out at the end
     g_con[g_con_len++] = c;
     if (g_con_len >= 512)
         con_flush();
@@ -292,7 +316,12 @@ static int name_problem(const char *name, int other)
 }
 
 static char g_stdin_buf[1024];
-static RtFile g_std[3];
+// ready as they are: the program does not spend a call on them before main (std_reset makes them so again)
+static RtFile g_std[3] = {
+    { .kind = FK_CON_IN, .rd = 1, .ungot = -1, .wungot = -1, .data = g_stdin_buf, .cap = sizeof(g_stdin_buf) },
+    { .kind = FK_CON_OUT, .wr = 1, .ungot = -1, .wungot = -1 },
+    { .kind = FK_CON_OUT, .wr = 1, .ungot = -1, .wungot = -1 },
+};
 RtFile *rt_stdin = &g_std[0], *rt_stdout = &g_std[1], *rt_stderr = &g_std[2];
 static RtFile *g_files;
 
@@ -484,6 +513,12 @@ static i64 fh_tell(RtFile *f)
 }
 #endif
 
+// Files on disk and in memory are reached only through these: they are set when the program
+// opens its first file (need_files_end). A program that only uses the console gets no file code.
+static int (*g_file_getc)(RtFile *f);
+static size_t (*g_file_write)(RtFile *f, const char *p, size_t n);
+static int (*g_file_flush)(RtFile *f);
+
 static int file_getc(RtFile *f)
 {
     if (!f || !f->rd) {
@@ -496,6 +531,28 @@ static int file_getc(RtFile *f)
         f->ungot = -1;
         return c;
     }
+    if (f->kind != FK_CON_IN)
+        return g_file_getc ? g_file_getc(f) : EOF;
+    if (f->pos >= f->len) {
+        if (f->eof) {
+            f->eof = 1;
+            return EOF;
+        }
+        con_flush();
+        int n = cc_input_line(f->data, (int)f->cap);
+        if (n <= 0) {
+            f->eof = 1;
+            return EOF;
+        }
+        f->len = (size_t)n;
+        f->pos = 0;
+    }
+    return (u8)f->data[f->pos++];
+}
+
+// a file on disk (Windows) or in memory
+static int file_getc_other(RtFile *f)
+{
 #ifdef __WINCC__
     if (f->kind == FK_HANDLE)
         return fh_getc(f);
@@ -548,6 +605,17 @@ static size_t file_write(RtFile *f, const char *p, size_t n)
         return n;
     }
     f->ungot = -1;
+    if (!g_file_write) {
+        f->err = 1;
+        rt_errno = E_BADF;
+        return 0;
+    }
+    return g_file_write(f, p, n);
+}
+
+// a file on disk (Windows) or in memory
+static size_t file_write_other(RtFile *f, const char *p, size_t n)
+{
 #ifdef __WINCC__
     if (f->kind == FK_HANDLE)
         return fh_write(f, p, n);
@@ -578,6 +646,12 @@ static int file_flush(RtFile *f)
         con_flush();
         return 0;
     }
+    return g_file_flush ? g_file_flush(f) : 0;
+}
+
+// a file on disk (Windows) or in memory
+static int file_flush_other(RtFile *f)
+{
 #ifdef __WINCC__
     if (f->kind == FK_HANDLE)
         return fh_flush(f);
@@ -596,9 +670,22 @@ static int file_flush(RtFile *f)
     return 0;
 }
 
+// The first file the program opens brings the file code in and the files' writing out at the end.
+static void need_files_end(void)
+{
+    g_file_getc = file_getc_other;
+    g_file_write = file_write_other;
+    g_file_flush = file_flush_other;
+#ifdef __WINCC__
+    g_flush_files = flush_files;
+    need_end();
+#endif
+}
+
 // Opens name with mode ("r", "w+", "ab", "wx" ...) into f.
 static int open_into(RtFile *f, const char *name, const char *mode)
 {
+    need_files_end();           // fopen, freopen: written out at the end if the program does not close it
     int rd = 0, wr = 0, app = 0, trunc = 0, must = 0, excl = 0;
     switch (mode ? *mode : 0) {
     case 'r': rd = must = 1; break;
@@ -788,6 +875,7 @@ RtFile *LOCKED(rt_tmpfile)(void)
     f->ungot = f->wungot = -1;
     f->next = g_files;
     g_files = f;
+    need_files_end();
     return f;
 }
 
@@ -1022,6 +1110,7 @@ RtFile *rt_fdopen(int fd, const char *mode)
     if (f->fpos < 0) f->fpos = 0;
     f->next = g_files;
     g_files = f;
+    need_files_end();           // written out at the end if the program does not close it
     return f;
 }
 #endif
@@ -3114,6 +3203,7 @@ int rt_atexit(void (*fn)(void))
         g_atexit_cap *= 2;
     }
     g_atexit[g_atexit_n++] = fn;
+    need_end();                 // it runs at the end
     return 0;
 }
 
@@ -3124,17 +3214,46 @@ int rt_at_quick_exit(void (*fn)(void))
     return 0;
 }
 
+#ifdef __WINCC__
+void __wcc_finish(int code);
+
+// The end of a Windows program (__wcc_at_end, set by need_end): atexit functions from the
+// last, then every file and the console written out; after _Exit and quick_exit only the console.
+// An atexit function that calls exit() comes back here and the rest goes on from where it was.
+static void lib_end(void)
+{
+    if (!g_exit_quick) {
+        while (g_atexit_n > 0)
+            g_atexit[--g_atexit_n]();
+        if (g_flush_files) g_flush_files();
+    }
+    con_flush();
+}
+
+static void flush_files(void) { rt_fflush(0); }
+
+// What is buffered now goes out (a fault stops the program: start.c)
+static void lib_flush_all(void)
+{
+    if (g_flush_files) g_flush_files();
+    con_flush();
+}
+
+// exit() anywhere: the end as after main, then the process ends (start.c)
+void rt_exit(int code)
+{
+    g_exit_code = code;
+    __wcc_finish(code);
+}
+#else
 void rt_exit(int code)
 {
     g_exit_code = code;
     if (g_exit_armed)
         cc_longjmp(&g_exit_jmp, 1);
     rt_fflush(0);               // not inside a program run: nowhere to go back to
-#ifdef __WINCC__
-    con_flush();
-    wcc_exit_process(code);     // a DLL's exit(), or one after main: the process ends
-#endif
 }
+#endif
 
 void rt__Exit(int code)
 {
@@ -3178,14 +3297,6 @@ int rt_run_main_args(int (*entry)(void), int argc, char **argv)
     g_exit_armed = 0;
     return g_exit_code;
 }
-
-#ifdef __WINCC__
-// A DLL has no main: the library is made ready when Windows loads it (start.c).
-void rt_lib_init(void)
-{
-    lib_reset();
-}
-#endif
 
 int rt_run_main(int (*entry)(void))
 {
@@ -3269,6 +3380,13 @@ SigFn rt_signal(int sig, SigFn fn)
     }
     SigFn old = g_signal[sig];
     g_signal[sig] = fn;
+#ifdef __WINCC__
+    // a handler of a CPU fault: only now does the program watch for faults (start.c)
+    if ((sig == 4 || sig == 8 || sig == 11) && (u64)fn > 1) {
+        void __wcc_watch_faults(void);
+        __wcc_watch_faults();
+    }
+#endif
     return old;
 }
 
@@ -3297,7 +3415,12 @@ int rt_raise(int sig)
 // the program if the handler returns; ignoring a fault is not possible).
 int rt_signal_caught(int sig)
 {
+#ifdef __WINCC__
+    // a Windows program is always its own run: no run of main to be inside of
+    return sig > 0 && sig < 32 && g_signal[sig] != SIG_DFL_V && g_signal[sig] != SIG_IGN_V;
+#else
     return sig > 0 && sig < 32 && g_exit_armed && g_signal[sig] != SIG_DFL_V && g_signal[sig] != SIG_IGN_V;
+#endif
 }
 
 void rt_signal_call(int sig)
@@ -4564,7 +4687,12 @@ static i64 utc_of_local(i64 local)
     return local - LOCAL_OFFSET(local - LOCAL_OFFSET(local));
 }
 
+#ifdef __WINCC__
+u64 cc_process_millis(void);    // winhost.c: since Windows made the process
+i64 rt_clock(void) { return (i64)cc_process_millis(); }
+#else
 i64 rt_clock(void) { return (i64)cc_millis() - g_clock_start; }
+#endif
 
 double rt_difftime(i64 a, i64 b) { return (double)(a - b); }
 

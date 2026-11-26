@@ -1,15 +1,17 @@
 ; setjmp/longjmp and the CPU helpers runtime.c needs in a Windows program (WinCC).
 ; The Microsoft x64 callee-saved state: rbx rbp rdi rsi r12-r15 rsp rip xmm6-15.
+; .gc: each comes into a program only if the program reaches it (strip.c)
 
-.local cc_setjmp
-.local cc_longjmp
-.local _InterlockedCompareExchange
-.local _InterlockedExchange
-.local _mm_pause
-.local _BitScanReverse64
-.local _BitScanForward64
+; u32 cc_thread_id(void): the id of this thread, from its block (TEB.ClientId.UniqueThread)
+.gc
+.local cc_thread_id
+cc_thread_id:
+    mov eax, dword ptr gs:[0x48]
+    ret
 
 ; int cc_setjmp(CcJmpBuf *buf)   buf: 10 qwords + 10 xmm (16 bytes each) = 240 bytes
+.gc
+.local cc_setjmp
 cc_setjmp:
     mov [rcx+0], rbx
     mov [rcx+8], rbp
@@ -37,6 +39,8 @@ cc_setjmp:
     ret
 
 ; void cc_longjmp(CcJmpBuf *buf, int value)
+.gc
+.local cc_longjmp
 cc_longjmp:
     mov eax, edx
     test eax, eax
@@ -65,22 +69,30 @@ cc_longjmp:
     jmp qword ptr [rcx+72]
 
 ; long _InterlockedCompareExchange(volatile long *p, long value, long expected): the old value
+.gc
+.local _InterlockedCompareExchange
 _InterlockedCompareExchange:
     mov eax, r8d
     lock cmpxchg dword ptr [rcx], edx
     ret
 
 ; long _InterlockedExchange(volatile long *p, long value): the old value
+.gc
+.local _InterlockedExchange
 _InterlockedExchange:
     mov eax, edx
     xchg dword ptr [rcx], eax
     ret
 
+.gc
+.local _mm_pause
 _mm_pause:
     pause
     ret
 
 ; unsigned char _BitScanReverse64(unsigned long *index, u64 v): 0 when v is 0
+.gc
+.local _BitScanReverse64
 _BitScanReverse64:
     test rdx, rdx
     jz .Lrt.bsr.zero
@@ -92,6 +104,8 @@ _BitScanReverse64:
     xor eax, eax
     ret
 
+.gc
+.local _BitScanForward64
 _BitScanForward64:
     test rdx, rdx
     jz .Lrt.bsf.zero

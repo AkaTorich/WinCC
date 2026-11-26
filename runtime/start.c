@@ -1,10 +1,14 @@
-// The start of a Windows program (WinCC). The compiler adds a tiny entry
-// (cc.c, win_entry_stub) that calls __wcc_startup with the program's own
-// entry: main, wmain, WinMain or wWinMain. Here the command line becomes
-// argc/argv (UTF-8, by the rules of the Microsoft C library), CPU faults
-// become C signals, then the program runs and the process ends with its code.
-// A DLL comes in through __wcc_dllentry: the library is made ready and the
-// DLL's own DllMain, if it has one, is called.
+// The start of a Windows program (WinCC). A program gets only what it uses itself:
+// the compiler adds a tiny entry (cc.c, win_entry_stub). An entry without parameters
+// (main(void), WinMain(void)…) is called as it is and its code goes to __wcc_finish:
+// the process ends with ExitProcess. An entry with parameters comes through the start
+// of its kind (__wcc_start_main, _wmain, _winmain, _wwinmain): the command line becomes
+// argc/argv (UTF-8, by the rules of the Microsoft C library) or WinMain's instance and line first.
+// What must happen at the end — atexit functions, output and files written out — the
+// library sets in __wcc_at_end when the program first uses it (runtime.c, need_end).
+// CPU faults become C signals only when the program sets a handler with signal()
+// (__wcc_watch_faults); otherwise Windows deals with them as with any program.
+// A DLL comes in through __wcc_dllentry: the DLL's own DllMain, if it has one, is called.
 #include "rtwin.h"
 
 typedef void *HANDLE;
@@ -21,22 +25,24 @@ int WideCharToMultiByte(unsigned cp, DWORD flags, const WCHAR *s, int n, char *o
 void ExitProcess(unsigned code);
 
 void *rt_malloc(size_t n);
-int  rt_fflush(void *f);
-void rt_heap_reset(void *arena, size_t size);
-int  rt_run_main_args(int (*entry)(void), int argc, char **argv);
-void rt_lib_init(void);
 int  rt_signal_caught(int sig);
 void rt_signal_call(int sig);
 
-enum { ENTRY_MAIN, ENTRY_WMAIN, ENTRY_WINMAIN, ENTRY_WWINMAIN };
+// set by the library when the program first needs them (runtime.c): what to do at the end
+// (atexit functions, then everything written out) and how to write out what is buffered now
+void (*__wcc_at_end)(void);
+void (*__wcc_flush_all)(void);
 
-static int g_kind;
-static void *g_user;
+// The process ends with the program's code; what the program started is finished first.
+void __wcc_finish(int code)
+{
+    if (__wcc_at_end) __wcc_at_end();       // exit() from an atexit function comes back here: the rest goes on
+    ExitProcess((unsigned)code);
+}
+
 static int g_argc;
 static char **g_argv;
 static WCHAR **g_wargv;
-static WCHAR *g_wtail;               // the command line after the program's name
-static char *g_tail;
 
 // ---- the command line ----
 
@@ -97,7 +103,6 @@ static void split_command_line(void)
     g_wargv[g_argc++] = a;
     if (*p == '"') p++;
     while (is_blank(*p)) p++;
-    g_wtail = (WCHAR *)p;
     while (*p) {
         const WCHAR *q = p;
         int n = next_arg(&q, 0);
@@ -114,11 +119,44 @@ static void split_command_line(void)
         while (is_blank(*p)) p++;
     }
     g_wargv[g_argc] = 0;
+}
+
+// main's argv: the same arguments in UTF-8
+static void split_command_line_utf8(void)
+{
+    split_command_line();
     g_argv = rt_malloc(sizeof(char *) * ((size_t)g_argc + 1));
     for (int i = 0; i < g_argc; i++)
         g_argv[i] = utf8_of(g_wargv[i], -1);
     g_argv[g_argc] = 0;
-    g_tail = utf8_of(g_wtail, -1);
+}
+
+static WCHAR *line_tail_w(void);
+
+// The command line after the program's name (WinMain's line), in UTF-8 whatever the code page:
+// made from the UTF-16 line into a buffer of its own (.bss: no room in the file, no heap).
+// A command line holds at most 32767 UTF-16 units, 3 bytes each at most in UTF-8.
+static char g_line[32768 * 3];
+
+static char *line_tail(void)
+{
+    int k = WideCharToMultiByte(65001, 0, line_tail_w(), -1, g_line, (int)sizeof(g_line), 0, 0);
+    if (k <= 0) g_line[0] = 0;
+    return g_line;
+}
+
+static WCHAR *line_tail_w(void)
+{
+    WCHAR *p = GetCommandLineW();
+    if (*p == '"') {
+        p++;
+        while (*p && *p != '"') p++;
+        if (*p == '"') p++;
+    } else {
+        while (*p && !is_blank(*p)) p++;
+    }
+    while (is_blank(*p)) p++;
+    return p;
 }
 
 // ---- CPU faults: C signals ----
@@ -143,7 +181,7 @@ static void fault_trampoline(void)
 {
     if (rt_signal_caught(g_fault_sig))
         rt_signal_call(g_fault_sig);        // the program's handler (it may longjmp away)
-    rt_fflush(0);
+    if (__wcc_flush_all) __wcc_flush_all();
     cc_print("\nпрограмма остановлена: ");
     cc_print(fault_name(g_fault_code));
     cc_print("\n");
@@ -167,7 +205,7 @@ static int on_fault(FaultInfo *e)
     case 0xC00000FD:
         // the stack is used up: no handler can run on it -- say so (on the room SetThreadStackGuarantee
         // kept) and stop
-        rt_fflush(0);
+        if (__wcc_flush_all) __wcc_flush_all();
         cc_print("\nпрограмма остановлена: переполнение стека (слишком глубокая рекурсия или слишком большой "
                  "массив внутри функции; больше стека даёт ключ wcc --stack МБ)\n");
         ExitProcess(code);
@@ -193,11 +231,16 @@ static long on_unhandled(FaultInfo *e)
     return g_prev_filter ? g_prev_filter(e) : 0;        // another module's: its own filter decides
 }
 
-static void watch_faults(void)
+// Faults of this program become C signals: signal() calls it when the program first sets a
+// handler of SIGSEGV, SIGFPE or SIGILL (runtime.c). A program without one stays as Windows has it.
+void __wcc_watch_faults(void)
 {
+    static int watching;
+    if (watching) return;
+    watching = 1;
     HANDLE h = 0;
     // FROM_ADDRESS | UNCHANGED_REFCOUNT: the module this code is in (the exe or the DLL)
-    if (!GetModuleHandleExW(4 | 2, (const WCHAR *)(void *)watch_faults, &h) || !h)
+    if (!GetModuleHandleExW(4 | 2, (const WCHAR *)(void *)__wcc_watch_faults, &h) || !h)
         return;
     g_image = (unsigned char *)h;
     unsigned lfanew = *(unsigned *)(g_image + 0x3C);
@@ -211,41 +254,35 @@ static void watch_faults(void)
 
 // ---- the program ----
 
-static int call_user(void)
+// An entry with parameters: each kind has its own start (cc.c, win_entry_stub calls the one
+// it needs), so a program gets only what its entry takes.
+void __wcc_start_main(int (*user)(int, char **, char **))
 {
-    switch (g_kind) {
-    case ENTRY_WMAIN:
-        return ((int (*)(int, WCHAR **))g_user)(g_argc, g_wargv);
-    case ENTRY_WINMAIN:
-        return ((int (*)(HANDLE, HANDLE, char *, int))g_user)(GetModuleHandleW(0), 0, g_tail, 10);
-    case ENTRY_WWINMAIN:
-        return ((int (*)(HANDLE, HANDLE, WCHAR *, int))g_user)(GetModuleHandleW(0), 0, g_wtail, 10);
-    default:
-        return ((int (*)(int, char **, char **))g_user)(g_argc, g_argv, 0);
-    }
+    split_command_line_utf8();
+    __wcc_finish(user(g_argc, g_argv, 0));
 }
 
-void __wcc_startup(int kind, void *user)
+void __wcc_start_wmain(int (*user)(int, WCHAR **))
 {
-    g_kind = kind;
-    g_user = user;
-    rt_heap_reset(0, 0);                    // the heap takes memory from Windows as it grows
     split_command_line();
-    watch_faults();
-    int rc = rt_run_main_args(call_user, g_argc, g_argv);
-    ExitProcess((unsigned)rc);
+    __wcc_finish(user(g_argc, g_wargv));
+}
+
+void __wcc_start_winmain(int (*user)(HANDLE, HANDLE, char *, int))
+{
+    __wcc_finish(user(GetModuleHandleW(0), 0, line_tail(), 10));       // 10: SW_SHOWDEFAULT
+}
+
+void __wcc_start_wwinmain(int (*user)(HANDLE, HANDLE, WCHAR *, int))
+{
+    __wcc_finish(user(GetModuleHandleW(0), 0, line_tail_w(), 10));
 }
 
 // DllMain of a WinCC DLL: reason 1 = loaded into a process, 0 = unloaded.
 BOOL __wcc_dllentry(HANDLE dll, DWORD reason, void *reserved, void *user)
 {
-    if (reason == 1) {
-        rt_heap_reset(0, 0);
-        rt_lib_init();
-        watch_faults();
-    }
     BOOL ok = user ? ((BOOL (*)(HANDLE, DWORD, void *))user)(dll, reason, reserved) : 1;
-    if (reason == 0)
-        rt_fflush(0);                       // files the DLL changed are written out
+    if (reason == 0 && __wcc_at_end)
+        __wcc_at_end();                     // the DLL's atexit functions, files it changed written out
     return ok;
 }

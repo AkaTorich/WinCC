@@ -2199,8 +2199,10 @@ static void emit_data(Obj *prog)
     for (Obj *var = prog; var; var = var->next) {
         if (var->is_function || !var->is_definition)
             continue;
-        // Windows: zeros take no room in the file (.bss), one copy per thread (.tls)
-        const char *want = var->is_tls ? ".tls" : cc_target_win && !var->init_data ? ".bss" : ".data";
+        // Windows: zeros take no room in the file (.bss), one copy per thread (.tls), string
+        // literals are only read and lie in .text, next to the code (as a linker merges .rdata)
+        const char *want = var->is_tls ? ".tls" : cc_target_win && !var->init_data ? ".bss"
+                         : cc_target_win && var->is_literal ? ".text" : ".data";
         any_tls |= var->is_tls;
         if (want != section) {
             println("%s", want);
@@ -2253,6 +2255,7 @@ static void emit_data(Obj *prog)
     }
     if (any_tls) {                      // the loader writes the program's TLS slot number here
         println(".data");
+        println(".gc");                 // only a program that reaches a thread-local variable keeps it
         println(".align 8");
         println("__wcc_tls_index:");
         println(".zero 8");
@@ -2289,6 +2292,22 @@ static void emit_funclet(Node *node)
     println(".seh_endproc");
 }
 
+// How many parameters main, wmain, WinMain, wWinMain take (-1: no such function): the start of a
+// Windows program (cc.c, win_entry_stub) prepares the command line only for an entry that takes it.
+int cc_entry_args[4] = { -1, -1, -1, -1 };
+
+static void note_entry_args(Obj *fn)
+{
+    static const char *names[4] = { "main", "wmain", "WinMain", "wWinMain" };
+    for (int i = 0; i < 4; i++)
+        if (cc_streq(fn->name, names[i])) {
+            int n = 0;
+            for (Obj *p = fn->params; p; p = p->next)
+                n++;
+            cc_entry_args[i] = n;
+        }
+}
+
 static void emit_text(Obj *prog)
 {
     println(".text");
@@ -2303,6 +2322,8 @@ static void emit_text(Obj *prog)
         if (fn->is_export)
             println(".export %s", fn->name);        // __declspec(dllexport)
         println("%s:", fn->name);
+        if (!fn->is_static)
+            note_entry_args(fn);
         if (cc_target_win && !fn->is_naked) {
             if (!fn->nsave)
                 println(".seh_proc 0");             // unwind info: push rbp; mov rbp, rsp (asm.c, .pdata)

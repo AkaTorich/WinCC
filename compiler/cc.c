@@ -184,6 +184,7 @@ int cc_build(const CcSource *sources, int count, const CcSymbol *externs, CcImag
 int cc_first_lib_unit;
 int (*cc_source_lib)(const char *name, const CcSource **files);
 int cc_pragma_subsystem;
+int cc_pragma_manifest;
 
 // Is "name:" a line of the assembly text (a function the program defines)?
 static int has_label(const char *text, const char *name)
@@ -227,11 +228,21 @@ static const char *win_entry_stub(CcWinTarget *t, const char *text)
     if (kind < 0)
         cc_error_at(0, 0, "нет функции main (для окон — WinMain)");
     t->entry = "__wcc_start";
-    // the frame of a C function, with its unwind info: an exception is searched for through it
+    // the frame of a C function, with its unwind info: an exception is searched for through it.
+    // An entry without parameters is called as it is and its code goes to ExitProcess (start.c,
+    // __wcc_finish): nothing of the library comes in that the program does not call itself.
+    // With parameters, the start of that kind makes them first: __wcc_start_main (argc, argv in
+    // UTF-8), __wcc_start_wmain, __wcc_start_winmain (instance and line), __wcc_start_wwinmain.
+    if (cc_entry_args[kind] <= 0)
+        return cc_format("\n.text\n.local __wcc_start\n__wcc_start:\n.seh_proc 0\n"
+                         "  push rbp\n  mov rbp, rsp\n  sub rsp, 32\n  call %s\n  mov ecx, eax\n"
+                         "  call __wcc_finish\n  int3\n.seh_endproc\n",
+                         entries[kind]);
+    static const char *starts[4] = { "__wcc_start_main", "__wcc_start_wmain", "__wcc_start_winmain", "__wcc_start_wwinmain" };
     return cc_format("\n.text\n.local __wcc_start\n__wcc_start:\n.seh_proc 0\n"
-                     "  push rbp\n  mov rbp, rsp\n  sub rsp, 32\n  mov ecx, %d\n  lea rdx, [rip+%s]\n"
-                     "  call __wcc_startup\n  int3\n.seh_endproc\n",
-                     kind, entries[kind]);
+                     "  push rbp\n  mov rbp, rsp\n  sub rsp, 32\n  lea rcx, [rip+%s]\n"
+                     "  call %s\n  int3\n.seh_endproc\n",
+                     entries[kind], starts[kind]);
 }
 
 // ---- wcc --lib: a library of the programmer's own (prog.lib, WinCC's format, not Microsoft's) ----
@@ -386,8 +397,12 @@ int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget 
     t->nres = cc_resources(&res);
     t->res = res;
     cc_first_lib_unit = first_lib > 0 && first_lib < count ? first_lib + 1 : 0;
+    for (int i = 0; i < 4; i++)
+        cc_entry_args[i] = -1;
     char *all = compile_to_asm(sources, count);
     cc_first_lib_unit = 0;
+    if (cc_pragma_manifest)
+        t->manifest = 1;
     all = cc_join(all, "", win_entry_stub(t, all));
     all = cc_strip_unused(all);         // the library's functions the program never reaches stay out
     all = cc_peephole(all);

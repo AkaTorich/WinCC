@@ -2,6 +2,7 @@
 // Собрать:  wcc examples\window.c       (есть WinMain и нет main — получится оконная программа)
 #include <windows.h>
 #include <stdio.h>
+#pragma comment(linker, "/MANIFEST")    // манифест WinCC: A-функции берут текст в UTF-8, кнопки нового вида
 
 enum { ID_BUTTON = 1, ID_EDIT, ID_OPEN, ID_EXIT, ID_ABOUT };
 

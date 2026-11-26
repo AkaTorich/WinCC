@@ -28,6 +28,7 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 -I папка  -D ИМЯ=1  -S (ассемблер в .s)  --stack МБ (по умолчанию 8)  --run (собрать и запустить)
 -g                               сведения для отладчика WinCC рядом с программой (программа.wdbg)
 -O0                              без переменных в регистрах: все в памяти (для отладки)
+--manifest                       манифест WinCC: A-функции берут UTF-8, кнопки нового вида (или #pragma comment(linker, "/MANIFEST"))
 ```
 
 Ошибки — строками `файл:строка: текст`, по-русски; предупреждения (`#warning`, неизвестная `\п` в строке) —
@@ -42,7 +43,7 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 |---|---|
 | `compiler\` | компилятор (C, собирает MSVC из VS 2026) |
 | `compiler\tokenize.c preprocess.c parse.c type.c codegen.c` | разбор и код из DynastyOS; для Windows: `long` 4 байта, `wchar_t` и `L""` — UTF-16, `#pragma pack`, `#pragma comment(lib)`, `asm("…")` вне функций, слова MSVC (`__stdcall`, `__int64`…); битовые поля разложены как у MSVC (`parse.c`: `struct_decl`, `union_decl`; чтение сдвигами и запись с маской — `codegen.c`); `_Static_assert`, `__func__`, `__DATE__`/`__TIME__`/`__COUNTER__`, `#line`, `#warning`; `_Alignas` и `__declspec(align)` у глобальных, static, локальных (больше 16 — память в стеке с нужным выравниванием) и полей; `__declspec(naked)`, `selectany`. C11: `typeof`, `_Generic`, массивы переменной длины (`parse.c`: `compute_vla_size`, `codegen.c`: `ND_ALLOCA`; в цикле стек не растёт), `_alloca`, `_Atomic` (цикл `lock cmpxchg`), `__builtin_atomic_cas/exchange/fetch_add`, K&R (`knr_params`), назначенный инициализатор в безымянные поля; потоковые переменные — секция `.tls` (`gs:[0x58]`, `__wcc_tls_index`); `__try`/`__except`/`__finally`/`__leave` (`try_stmt`; фильтр и `__finally` — отдельные функции-«funclet», `emit_funclet`); `@имя` в `asm()` — место локальной переменной |
-| `compiler\asm.c` | ассемблер; в конце — запись `.exe`/`.dll` для Windows (`cc_assemble_win`): импорт по DLL, точка входа, манифест в `.rsrc`, ASLR/NX, секции `.bss` (нули без места в файле), `.tls` с каталогом TLS, `.pdata` со сведениями о раскрутке (директивы `.seh_proc`, `.seh_scope`, `.seh_endproc`; обработчик `__try` — `__C_specific_handler` из ntdll); команды: `cmpxchg xadd bsf bsr`, x87, `popcnt lzcnt tzcnt bswap bt* loop jrcxz movabs syscall rdrand crc32 prefetch*`, SSE2–SSE4.2 (`sse_ex`), AVX с `ymm` (`avx`, кодирование VEX — `vex`), `gs:`/`fs:`; числовые метки `1:`/`1b`/`1f`; `.srcfile` — ошибка в `.asm` называет его строку; директивы `.alias`, `.gc` |
+| `compiler\asm.c` | ассемблер; в конце — запись `.exe`/`.dll` для Windows (`cc_assemble_win`): один раздел `.text`: код, строковые литералы, таблицы импорта и экспорта, каталог TLS, `.pdata` (только при `__try` или `signal`) и ресурсы за ним, другие разделы — только непустые (пустая программа — 1 КБ: заголовки и `.text`), импорт по DLL, точка входа, манифест по просьбе, ASLR/NX, секции `.bss` (нули без места в файле), `.tls` с каталогом TLS, `.pdata` со сведениями о раскрутке (директивы `.seh_proc`, `.seh_scope`, `.seh_endproc`; обработчик `__try` — `__C_specific_handler` из ntdll); команды: `cmpxchg xadd bsf bsr`, x87, `popcnt lzcnt tzcnt bswap bt* loop jrcxz movabs syscall rdrand crc32 prefetch*`, SSE2–SSE4.2 (`sse_ex`), AVX с `ymm` (`avx`, кодирование VEX — `vex`), `gs:`/`fs:`; числовые метки `1:`/`1b`/`1f`; `.srcfile` — ошибка в `.asm` называет его строку; директивы `.alias`, `.gc` |
 | `compiler\strip.c` | выбрасывает из программы функции и данные библиотеки, до которых она не дотягивается |
 | `compiler\winlink.c` | какая DLL даёт имя: таблицы экспорта читаются прямо из файлов DLL (System32 и папка программы), `.lib` не нужны |
 | `compiler\cc.c` | `cc_build_win`: сборка, поиск main/wmain/WinMain/wWinMain/DllMain и вход в программу |
@@ -57,7 +58,8 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 | `runtime\winthread.c` | замок stdio, `threads.h` (C11), `process.h` (`_beginthreadex`, `_spawnv`…) |
 | `runtime\winlocale.c` | локали Windows: имена («Russian» → `ru_RU.UTF-8`), месяцы и дни, десятичная точка, `strcoll`, пояс для `%Z` |
 | `runtime\conio.c`, `runtime\cmath.c` | `conio.h` (`_getch`, `_kbhit`…); `complex.h` (стиль Microsoft) и `fenv.h` |
-| `runtime\start.c` | старт программы: командная строка → argc/argv в UTF-8, сбои процессора → сигналы Си (последний обработчик: сначала `__try`), DllMain |
+| `runtime\start.c` | старт программы — в программе только то, чем она пользуется: вход без параметров (`main(void)`, `WinMain(void)`) зовётся прямо и кончается `ExitProcess` (пустая программа берёт из Windows одну `ExitProcess`); с параметрами — старт своего вида (`__wcc_start_main/_wmain/_winmain/_wwinmain`) готовит argc/argv в UTF-8 или описатель и строку `WinMain`; конец (atexit, запись вывода и файлов) библиотека ставит при первом использовании (`__wcc_at_end`); сбои процессора → сигналы Си только после своего `signal(SIGSEGV/SIGFPE/SIGILL)` программы (последний обработчик: сначала `__try`); DllMain |
+| `compiler\stub.bin` | заглушка DOS у каждого `.exe` и `.dll` (64 байта, `mov ah, 4Ch; int 21h`); её байты вшиты в `asm.c` (`g_dos_stub`), заголовки PE — с `0x80` |
 | `runtime\wingdi.c` | TextOutA, DrawTextA… для UTF-8: GDI получает тот же текст в UTF-16 |
 | `runtime\rtasm.asm` | setjmp/longjmp, помощники процессора; `memcpy`, `memmove`, `memset` (`rep movsb`/`stosb`), `strlen` (SSE2) |
 | `include\windows.h`, `include\win\*.h` | Windows: типы, структуры, константы, функции kernel32, user32, gdi32, comdlg32, shell32, advapi32; `except.h` — исключения (`EXCEPTION_*`, `CONTEXT`, `RaiseException`) |
@@ -82,7 +84,9 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 | `ide\` | окно WinCC.exe (раздел ниже) |
 | `docs\руководство\` | **Руководство WinCC** — книга для тех, кто пишет на WinCC: главы текстом в `главы\`, `python сборка.py` собирает PDF, `python "сборка chm.py"` — справку Windows `Руководство WinCC.chm` (нужен HTML Help Workshop), `python "проверка примеров.py"` собирает все примеры книги |
 
-**Кириллица.** Исходники — UTF-8. В каждом `.exe` есть манифест: кодовая страница программы — UTF-8, поэтому
+**Кириллица.** Исходники — UTF-8. Консоль, файлы, `argv` и текст GDI получают UTF-8 через W-функции библиотеки.
+Для A-функций Windows программа просит манифест WinCC — `#pragma comment(linker, "/MANIFEST")` или `wcc --manifest`
+(без просьбы его нет: пустая программа — 1 КБ); в нём кодовая страница программы — UTF-8, поэтому
 `MessageBoxA`, `CreateWindowExA`, `SetWindowTextA` и другие A-функции берут текст программы как есть. GDI манифест
 не слушает — поэтому `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`, `CreateFontA` идут через
 `runtime\wingdi.c`. С `#define UNICODE` до `windows.h` обычные имена — W-функции (UTF-16, `L"…"`, `TEXT("…")`).
@@ -313,8 +317,8 @@ rc.exe Microsoft, и даёт те же байты: `tests\res\compare.ps1` со
 - Пути файлов — от папки `.rc`, затем в папках `-I`; пишутся и `"res\\app.ico"`, и `"res\app.ico"`.
 - Как у rc.exe: номера картинок значков и курсоров — один общий счёт; имя в кавычках (`"NAME" RCDATA …`) хранится
   вместе с кавычками; ресурс с тем же видом, именем и языком — последний.
-- Манифест WinCC (UTF-8 — кодовая страница программы, Common Controls 6) кладётся сам; свой манифест `1 24 "x.manifest"`
-  его заменяет.
+- Манифест WinCC (UTF-8 — кодовая страница программы, Common Controls 6) кладётся, когда программа его просит
+  (`--manifest`, `#pragma comment(linker, "/MANIFEST")`); свой манифест `1 24 "x.manifest"` его заменяет.
 - Готовый `.res` (rc.exe, windres) — `wcc app.c app.res`: ресурсы берутся как есть.
 - Проверка: `tests\win_res.c` — Windows сама читает каждый ресурс (значки 16 и 32 — BMP и PNG, курсор, картинка,
   данные, строки на двух языках, версия, оба меню, клавиши, оба вида диалога); `tests\res\compare.ps1` — то же с `.res`

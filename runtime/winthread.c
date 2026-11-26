@@ -72,10 +72,36 @@ static CRITICAL_SECTION *lazy(Lazy *l)
     return &l->cs;
 }
 
-static Lazy g_io;
+// The lock of stdio: it asks nothing of Windows. The thread that holds it may take it again
+// (fflush inside fclose, printf in a signal handler). Another thread waits on the spot;
+// a program that starts threads through threads.h or process.h gets a gentler wait
+// (g_io_wait: the thread gives its time away) — only it has the Windows calls for that.
+static volatile long g_io_owner;        // 0 free, else the id of the thread that holds it
+static int g_io_depth;
+static void (*g_io_wait)(void);
+u32 cc_thread_id(void);                 // rtasm.asm: from the thread's block, no call to Windows
 
-void cc_io_lock(void) { EnterCriticalSection(lazy(&g_io)); }
-void cc_io_unlock(void) { LeaveCriticalSection(lazy(&g_io)); }
+void cc_io_lock(void)
+{
+    long me = (long)cc_thread_id();
+    if (g_io_owner == me) {
+        g_io_depth++;
+        return;
+    }
+    for (int spins = 0; _InterlockedCompareExchange(&g_io_owner, me, 0) != 0; spins++) {
+        if (g_io_wait && spins > 64) g_io_wait();
+        else _mm_pause();
+    }
+    g_io_depth = 1;
+}
+
+void cc_io_unlock(void)
+{
+    if (--g_io_depth == 0)
+        _InterlockedExchange(&g_io_owner, 0);
+}
+
+static void io_wait_yield(void) { SwitchToThread(); }
 
 // ---- threads.h ----
 
@@ -132,6 +158,7 @@ int rt_thrd_create(RtThrd *t, int (*fn)(void *), void *arg)
     s->fn = fn;
     s->arg = arg;
     DWORD id = 0;
+    g_io_wait = io_wait_yield;
     HANDLE h = CreateThread(0, 0, thrd_start, s, 0, &id);
     if (!h) {
         rt_free(s);
@@ -312,6 +339,7 @@ u64 rt__beginthreadex(void *security, unsigned stack, unsigned (*start)(void *),
     s->fn = start;
     s->arg = arg;
     DWORD tid = 0;
+    g_io_wait = io_wait_yield;
     HANDLE h = CreateThread(security, stack, start_ex, s, flags, &tid);
     if (!h) {
         rt_free(s);
@@ -339,6 +367,7 @@ u64 rt__beginthread(void (*start)(void *), unsigned stack, void *arg)
     if (!s) { rt_errno = 12; return (u64)-1; }
     s->fn = start;
     s->arg = arg;
+    g_io_wait = io_wait_yield;
     HANDLE h = CreateThread(0, stack, start_old, s, 0, 0);
     if (!h) {
         rt_free(s);

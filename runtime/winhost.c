@@ -118,11 +118,16 @@ void cc_print(const char *text)
     while (text[n]) n++;
     DWORD done;
     if (is_console(h)) {            // the console takes UTF-16: Cyrillic shows as it is
-        int len;
-        WCHAR *w = wide_of(text, n, &len);
-        if (w) {
-            WriteConsoleW(h, w, (DWORD)len, &done, 0);
-            rt_free(w);
+        // by pieces through a buffer on the stack (no heap for printing); a piece ends on a whole character
+        WCHAR w[600];
+        int at = 0;
+        while (at < n) {
+            int k = n - at > 512 ? 512 : n - at;
+            if (at + k < n)
+                while (k > 1 && ((unsigned char)text[at + k] & 0xC0) == 0x80) k--;
+            int len = MultiByteToWideChar(CP_UTF8, 0, text + at, k, w, 600);
+            if (len > 0) WriteConsoleW(h, w, (DWORD)len, &done, 0);
+            at += k;
         }
     } else {                        // a file or a pipe gets the UTF-8 bytes
         WriteFile(h, text, (DWORD)n, &done, 0);
@@ -287,6 +292,21 @@ int cc_utc_offset(i64 utc)
         return 0;
     u64 lv = ((u64)lf.hi << 32) | lf.lo;
     return (int)(((i64)lv - (i64)v) / 10000000);
+}
+
+BOOL GetProcessTimes(HANDLE p, FILETIME *created, FILETIME *ended, FILETIME *kernel, FILETIME *user);
+HANDLE GetCurrentProcess(void);
+void GetSystemTimePreciseAsFileTime(FILETIME *ft);
+
+// milliseconds since Windows made this process: clock() needs no mark made before main
+u64 cc_process_millis(void)
+{
+    FILETIME c, e, k, u, now;
+    if (!GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u))
+        return 0;
+    GetSystemTimePreciseAsFileTime(&now);
+    u64 from = ((u64)c.hi << 32) | c.lo, to = ((u64)now.hi << 32) | now.lo;
+    return to > from ? (to - from) / 10000 : 0;
 }
 
 // milliseconds by the performance counter: clock() moves by 1 ms, not by the 16 ms of the system tick

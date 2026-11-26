@@ -7,6 +7,7 @@ int main(void) { return 0; }
 #else
 #include <windows.h>
 #include <string.h>
+#pragma comment(linker, "/MANIFEST")    // WinCC's manifest: UTF-8 is the code page (asked for, not by default)
 
 static volatile LONG g_sum;
 static CRITICAL_SECTION g_cs;

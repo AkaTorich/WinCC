@@ -171,6 +171,7 @@ struct Obj {
     int unit;                  // a file-scope static of a source: its number (1, 2...); 0 = seen by every source
     int is_tls;                 // _Thread_local, __declspec(thread): one per thread (the .tls section)
     int is_selectany;           // __declspec(selectany): several sources may define it, one stays
+    int is_literal;             // a string literal: only read (Windows: it lies in .text, next to the code)
     int indirect;               // a local whose slot holds the address of its memory (a VLA, align > 16)
     int reg;                    // a local kept in a register (codegen: 1 rbx, 2 rsi, 3 rdi, 4..7 r12..r15), 0 in memory
     // globals
@@ -267,6 +268,7 @@ char *cc_codegen_text(Obj *prog);
 // wcc -g: frames, variables and types for the debugger (.dbgvar...; asm.c writes them out, cc_win_debug_text);
 // wcc -O0: no locals in registers
 extern int cc_debug_info, cc_no_regalloc;
+extern int cc_entry_args[4];        // parameters of main, wmain, WinMain, wWinMain; -1: none (codegen.c)
 // asm.c, wcc -g: the debug info of the last cc_assemble_win (the ".wdbg" text), or 0
 extern char *cc_win_debug_text;
 
@@ -309,6 +311,7 @@ typedef struct {
     u64 stack_reserve;          // 0 = 1 MB
     const CcResource *res;      // resources of .rc and .res files (cc_build_win fills them in)
     int nres;
+    int manifest;               // WinCC's manifest in an .exe: wcc --manifest or #pragma comment(linker, "/MANIFEST")
 } CcWinTarget;
 int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_size);
 
@@ -347,6 +350,7 @@ int cc_build_lib(const CcSource *sources, int count, char **out);
 // A library in source form: #pragma comment(lib, "name") of a compiled unit asks for it; the hook
 // gives its C files (count, 0 = it is a DLL), they are compiled as library units too.
 extern int (*cc_source_lib)(const char *name, const CcSource **files);
+extern int cc_pragma_manifest;      // #pragma comment(linker, "/MANIFEST"): the program asks for WinCC's manifest
 extern int cc_pragma_subsystem;     // #pragma comment(linker, "/SUBSYSTEM:WINDOWS|CONSOLE"): 2 or 3, 0 = none
 char *cc_strip_unused(const char *asm_text);    // strip.c: without the .gc pieces nothing reaches
 char *cc_peephole(const char *asm_text);        // peephole.c: push/pop pairs into moves, jumps to the next line out

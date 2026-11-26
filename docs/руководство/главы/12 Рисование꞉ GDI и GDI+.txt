@@ -44,6 +44,7 @@
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>
+#pragma comment(linker, "/MANIFEST")    // заголовок окна по-русски: A-функции в UTF-8
 
 static void draw(HDC dc, int w, int h)
 {

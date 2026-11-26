@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #pragma comment(lib, "dwmapi")
+#pragma comment(linker, "/MANIFEST")    // манифест WinCC: A-функции берут текст в UTF-8
 
 HRESULT DwmSetWindowAttribute(HWND hwnd, DWORD attr, const void *value, DWORD size);
 

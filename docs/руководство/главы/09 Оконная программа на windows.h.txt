@@ -34,6 +34,7 @@
 ```
 #include <windows.h>
 #include <stdio.h>
+#pragma comment(linker, "/MANIFEST")    // A-функции окон берут текст в UTF-8 (глава 7)
 
 int main(void)
 {
@@ -66,6 +67,7 @@ int main(void)
 
 ```
 #include <windows.h>
+#pragma comment(linker, "/MANIFEST")    // A-функции окон берут текст в UTF-8 (глава 7)
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -243,6 +245,7 @@ static void open_file(HWND hwnd)
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
+#pragma comment(linker, "/MANIFEST")    // текст окон в UTF-8 и кнопки нового вида
 
 enum { ID_TEXT = 100, ID_CLEAR, ID_OPEN, ID_EXIT, ID_ABOUT };
 

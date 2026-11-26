@@ -298,8 +298,10 @@ static Obj *new_anon_gvar(Type *ty)
 
 static Obj *new_string_literal(char *p, Type *ty)
 {
-    Obj *var = new_anon_gvar(ty);
+    // its own name form .L.str.N: in .text (Windows) it must not be taken for a goto label (.L..N)
+    Obj *var = new_gvar(cc_format(".L.str.%d", g_unique_id++), ty);
     var->init_data = p;
+    var->is_literal = 1;
     return var;
 }
 

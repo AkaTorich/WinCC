@@ -165,7 +165,7 @@ char *cc_strip_unused(const char *text)
     g_names = cc_alloc(sizeof(Name) * (size_t)g_cap);
 
     // pieces: a piece starts at its first .gc/.align/.local/.export line or its
-    // label; in .text only a label without a dot starts one (.L... are inside)
+    // label; in .text only a label without a dot (or a string literal's .L.str.N) starts one (.L... are inside)
     Piece *pc = cc_alloc(sizeof(Piece) * (size_t)(nl + 1));
     int *piece_of = cc_alloc(sizeof(int) * (size_t)nl);     // -1: outside any piece (kept)
     int np = 0, cur = -1, pending = -1, text_sec = 1;
@@ -212,7 +212,11 @@ char *cc_strip_unused(const char *text)
             pc[cur].removable = 0;
             pending = cur;
         }
-        if (n && (!text_sec || name[0] != '.')) {
+        // in .text a string literal (.L.str.N, Windows: literals lie next to the code) starts a piece too;
+        // goto labels inside functions (.L..N) do not
+        int literal = n > 7 && name[0] == '.' && name[1] == 'L' && name[2] == '.' && name[3] == 's' &&
+                      name[4] == 't' && name[5] == 'r' && name[6] == '.';
+        if (n && (!text_sec || name[0] != '.' || literal)) {
             if (pending < 0) {                      // a label with nothing before it starts a piece
                 if (cur >= 0) pc[cur].last = i;
                 cur = np++;

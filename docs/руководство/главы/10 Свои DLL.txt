@@ -61,7 +61,7 @@ BOOL WINAPI DllMain(HINSTANCE dll, DWORD reason, LPVOID reserved)
 
 ```
 > wcc --dll mathlib.c
-Готово: mathlib.dll — библиотека DLL, 31232 байт, 157 мс
+Готово: mathlib.dll — библиотека DLL, 20480 байт, 157 мс
 ```
 
 `__declspec(dllexport)` — слово Microsoft C, которое WinCC понимает так же: функция попадает в таблицу экспорта. Остальные функции DLL остаются внутренними. Правило выбора такое:
@@ -101,7 +101,7 @@ int main(void)
 
 ```
 > wcc usemath.c -l mathlib
-Готово: usemath.exe — консольная программа, 35328 байт, 109 мс
+Готово: usemath.exe — консольная программа, 19456 байт, 109 мс
 > usemath
 Привет, мир! (из mathlib.dll)
 add(40, 2) = 42
@@ -218,9 +218,9 @@ int main(int argc, char **argv)
 
 ```
 > wcc --dll textkit.c
-Готово: textkit.dll — библиотека DLL, 24576 байт, 125 мс
+Готово: textkit.dll — библиотека DLL, 7168 байт, 125 мс
 > wcc shout.c
-Готово: shout.exe — консольная программа, 35328 байт, 109 мс
+Готово: shout.exe — консольная программа, 24064 байт, 109 мс
 > shout
 СЪЕШЬ ЖЕ ЕЩЁ ЭТИХ МЯГКИХ ФРАНЦУЗСКИХ БУЛОК
 знаков: 42, байт: 78

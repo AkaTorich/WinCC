@@ -181,7 +181,13 @@ static int run(NetResponse *r, const char *method, const char *url, const char *
         raw[len / sizeof(wchar_t)] = 0;
         // the first line is "HTTP/1.1 200 OK": the headers are what follows it
         wchar_t *first = wcsstr(raw, L"\r\n");
-        r->headers = net_utf8(first ? first + 2 : raw, -1);
+        // WinHTTP made the header bytes wide by the process's code page: back to those bytes by the
+        // same page, and they are the server's UTF-8 -- with or without the manifest (UTF-8 page)
+        const wchar_t *from = first ? first + 2 : raw;
+        int n = WideCharToMultiByte(CP_ACP, 0, from, -1, 0, 0, 0, 0);
+        r->headers = n > 0 ? malloc((size_t)n) : 0;
+        if (r->headers)
+            WideCharToMultiByte(CP_ACP, 0, from, -1, r->headers, n, 0, 0);
     }
     free(raw);
     if (!r->headers)

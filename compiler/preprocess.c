@@ -892,6 +892,7 @@ static void pragma(Token *at, Token *c, Token **cur)
         for (; *s; s++) {
             if (prefix_nocase(s, "subsystem:windows", 17)) cc_pragma_subsystem = 2;
             if (prefix_nocase(s, "subsystem:console", 17)) cc_pragma_subsystem = 3;
+            if (s[0] == '/' && prefix_nocase(s + 1, "manifest", 8)) cc_pragma_manifest = 1;   // WinCC's manifest
         }
         return;
     }

@@ -2438,6 +2438,26 @@ int cc_assemble_program(const char *text, const CcSymbol *externs, CcImage *out)
 
 static int pe_align(int n, int a) { return (n + a - 1) & ~(a - 1); }
 
+// The DOS stub of every program and DLL: compiler\stub.bin, 64 bytes. An MZ header whose code
+// (at 0x20: mov ah, 4Ch; int 21h) ends the program at once if DOS ever runs it. The PE headers
+// follow at 0x80: e_lfanew is set here.
+static const u8 g_dos_stub[64] = {
+    0x4d, 0x5a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    0xff, 0xff, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb4, 0x4c, 0xcd, 0x21,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+};
+
+static void put_dos_stub(u8 *file)
+{
+    for (int i = 0; i < 64; i++)
+        file[i] = g_dos_stub[i];
+    PeDos *dos = (PeDos *)file;
+    dos->e_lfanew = 0x80;
+}
+
 static void wr16(u8 *p, unsigned v) { p[0] = (u8)v; p[1] = (u8)(v >> 8); }
 static void wr32(u8 *p, u32 v) { for (int i = 0; i < 4; i++) p[i] = (u8)(v >> (8 * i)); }
 static void wr64(u8 *p, u64 v) { for (int i = 0; i < 8; i++) p[i] = (u8)(v >> (8 * i)); }
@@ -2828,9 +2848,7 @@ int cc_assemble_pe(const char *text, const CcSymbol *externs, const char *dll_na
     }
 
     // headers
-    PeDos *dos = (PeDos *)buf;
-    dos->e_magic = PE_DOS_MAGIC;
-    dos->e_lfanew = 0x80;
+    put_dos_stub(buf);
     u8 *nt = buf + 0x80;
     wr32(nt, PE_NT_MAGIC);
     PeFileHeader *fh = (PeFileHeader *)(nt + 4);
@@ -3175,12 +3193,17 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         cc_error_at("ассемблер", 0, "в экспорт просится %d имён, PE держит до 65535", ne);
     sort_exports(exps, cc_alloc(sizeof(ExpEnt) * (size_t)(ne + 1)), ne);
 
+    // The layout: one .text section holds the code and, after it, everything only read --
+    // import and export tables, the TLS directory, .pdata, resources (as a linker merges .rdata
+    // into .text). The program's writable data, .tls, .bss and base relocations get sections of
+    // their own, and only when they have something: an empty program is the headers and one
+    // section, 1 KB in the file.
     const int SA = PE_SECT_ALIGN;
     int text_rva = SA;
-    int data_rva = text_rva + pe_align(text_size > 0 ? text_size : 1, SA);
+    int tab_rva = text_rva + pe_align(text_size, 16);
 
-    // inside .data, after the program's data
-    int o = pe_align(data_raw, 16);
+    // the tables, right after the code (offsets from tab_rva)
+    int o = 0;
     int iat_off = o;     o += nslot * 8;
     int ilt_off = o;     o += nslot * 8;
     o = pe_align(o, 4);
@@ -3216,12 +3239,20 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         tlsdir_off = o;
         o += 40 + 8;
     }
-    int data_vsize = o;
-    int tls_rva = data_rva + pe_align(data_vsize, SA);
+    int tab_size = o;
 
     // .pdata: a RUNTIME_FUNCTION (12 bytes) for each C function and funclet, then the unwind
-    // infos: one for all functions, one for all funclets, an own one for a function with __try
-    int npf = as->nproc, pdata_size = 0;
+    // infos: one for all functions, one for all funclets, an own one for a function with __try.
+    // Only a program that unwinds needs it: one with __try, one that watches its faults
+    // (signal(): runtime\start.c), and a DLL (the program that loads it may unwind through it).
+    int want_pdata = !t->exe;
+    for (int i = 0; i < as->nproc && !want_pdata; i++)
+        if (as->procs[i].nscopes) want_pdata = 1;
+    {
+        Label *w = find_label(as, "__wcc_watch_faults", 18);
+        if (w && w->defined) want_pdata = 1;
+    }
+    int npf = want_pdata ? as->nproc : 0, pdata_size = 0;
     if (npf) {
         pdata_size = 12 * npf + 8 + 12;
         for (int i = 0; i < npf; i++)
@@ -3230,9 +3261,10 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
             else if (as->procs[i].nregs)
                 pdata_size += unwind_size(&as->procs[i]);
     }
-    int pdata_rva = tls_rva + (tls_size ? pe_align(tls_size, SA) : 0);
+    int pdata_rva = tab_rva + pe_align(tab_size, 8);
 
-    // .rsrc: the program's resources and, in an .exe, WinCC's manifest (type 24, id 1) -- unless it has its own
+    // .rsrc: the program's resources and, in an .exe that asks for it (wcc --manifest,
+    // #pragma comment(linker, "/MANIFEST")), WinCC's manifest (type 24, id 1) -- unless it has its own
     CcResource *res = cc_alloc(sizeof(CcResource) * (size_t)(t->nres + 1));
     int nres = 0, own_manifest = 0;
     for (int i = 0; i < t->nres; i++) {
@@ -3240,20 +3272,25 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         if (!t->res[i].type.str && t->res[i].type.num == 24 && !t->res[i].name.str && t->res[i].name.num == 1)
             own_manifest = 1;
     }
-    if (t->exe && !own_manifest) {
+    if (t->exe && !own_manifest && t->manifest) {     // only when the program asks for it
         CcResource *m = &res[nres++];
         m->type.num = 24;
         m->name.num = 1;
         m->data = (const u8 *)g_manifest;
         m->size = cc_strlen(g_manifest);
     }
-    int rsrc_rva = pdata_rva + (pdata_size ? pe_align(pdata_size, SA) : 0);
+    int rsrc_rva = pdata_rva + pe_align(pdata_size, 8);
     int rsrc_cap = nres ? win_resources(0, 0, res, nres) : 0;
-    int reloc_rva = rsrc_rva + pe_align(rsrc_cap, SA);
-    int all_raw = text_size + data_raw + tls_size;
-    int reloc_cap = pe_align(all_raw / 4 + 12 * (all_raw / 4096 + 2) + 64, SA);
-    int capacity = reloc_rva + reloc_cap;
-    int bss_rva = capacity;                     // last: zeros, nothing of it in the file nor in buf
+    int text_end = rsrc_rva + rsrc_cap;
+    // then the program's writable data, .tls, .bss (zeros: nothing of it in the file nor in buf)
+    int data_rva = text_rva + pe_align(text_end - text_rva, SA);
+    int tls_rva = data_rva + (data_raw ? pe_align(data_raw, SA) : 0);
+    int bss_rva = tls_rva + (tls_size ? pe_align(tls_size, SA) : 0);
+    int reloc_rva = bss_rva + (bss_size ? pe_align(bss_size, SA) : 0);     // last; its bytes in relocs[]
+    int all_raw = text_size + data_raw + tls_size + tab_size;
+    int reloc_cap = all_raw / 4 + 12 * (all_raw / 4096 + 2) + 64;
+    int capacity = bss_rva;
+    u8 *relocs = cc_alloc((size_t)reloc_cap);
 
     u8 *buf = cc_alloc((size_t)capacity);
     as->image_buf = buf;
@@ -3261,7 +3298,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     as->base[SEC_DATA] = buf + data_rva;
     as->base[SEC_TLS] = buf + tls_rva;
     as->base[SEC_BSS] = buf + bss_rva;
-    as->slots = buf + data_rva + iat_off;
+    as->slots = buf + tab_rva + iat_off;
     int sec_rva_of[SEC_COUNT];
     sec_rva_of[SEC_TEXT] = text_rva;
     sec_rva_of[SEC_DATA] = data_rva;
@@ -3276,13 +3313,13 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         Label *ix = find_label(as, "__wcc_tls_index", 15);
         if (!ix || !ix->defined || ix->section != SEC_DATA)
             cc_error_at(0, 0, "ассемблер: у потоковых переменных нет __wcc_tls_index");
-        u8 *d = buf + data_rva + tlsdir_off;
+        u8 *d = buf + tab_rva + tlsdir_off;
         wr64(d, as->image_base + (u64)tls_rva);
         wr64(d + 8, as->image_base + (u64)(tls_rva + tls_size));
         wr64(d + 16, as->image_base + (u64)(data_rva + ix->offset));
-        wr64(d + 24, as->image_base + (u64)(data_rva + tlsdir_off + 40));
+        wr64(d + 24, as->image_base + (u64)(tab_rva + tlsdir_off + 40));
         for (int k = 0; k < 4; k++)
-            extra_rel[n_extra++] = data_rva + tlsdir_off + 8 * k;
+            extra_rel[n_extra++] = tab_rva + tlsdir_off + 8 * k;
     }
 
     // .pdata and the unwind infos (x64): a function's frame is rbp, a funclet's rbx
@@ -3338,40 +3375,41 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
 
     // import tables: IAT and ILT both hold the hint/name RVAs; Windows fills the IAT
     for (int i = 0; i < norder; i++) {
-        u64 name_rva = (u64)(data_rva + name_off[i]);
-        wr64(buf + data_rva + iat_off + order[i]->slot * 8, name_rva);
-        wr64(buf + data_rva + ilt_off + order[i]->slot * 8, name_rva);
-        wr16(buf + data_rva + name_off[i], 0);
+        u64 name_rva = (u64)(tab_rva + name_off[i]);
+        wr64(buf + tab_rva + iat_off + order[i]->slot * 8, name_rva);
+        wr64(buf + tab_rva + ilt_off + order[i]->slot * 8, name_rva);
+        wr16(buf + tab_rva + name_off[i], 0);
         for (int k = 0; k < order[i]->len; k++)
-            buf[data_rva + name_off[i] + 2 + k] = (u8)order[i]->name[k];
+            buf[tab_rva + name_off[i] + 2 + k] = (u8)order[i]->name[k];
     }
     for (int d = 0; d < ndll; d++) {
-        PeImportDesc *desc = (PeImportDesc *)(buf + data_rva + impdesc_off) + d;
-        desc->OriginalFirstThunk = (u32)(data_rva + ilt_off + dll_first[d] * 8);
-        desc->Name = (u32)(data_rva + dllname_off[d]);
-        desc->FirstThunk = (u32)(data_rva + iat_off + dll_first[d] * 8);
+        PeImportDesc *desc = (PeImportDesc *)(buf + tab_rva + impdesc_off) + d;
+        desc->OriginalFirstThunk = (u32)(tab_rva + ilt_off + dll_first[d] * 8);
+        desc->Name = (u32)(tab_rva + dllname_off[d]);
+        desc->FirstThunk = (u32)(tab_rva + iat_off + dll_first[d] * 8);
         for (int k = 0; dlls[d][k]; k++)
-            buf[data_rva + dllname_off[d] + k] = (u8)dlls[d][k];
+            buf[tab_rva + dllname_off[d] + k] = (u8)dlls[d][k];
     }
 
     if (ne) {
-        PeExportDir *ed = (PeExportDir *)(buf + data_rva + expdir_off);
-        ed->Name = (u32)(data_rva + own_off);
+        PeExportDir *ed = (PeExportDir *)(buf + tab_rva + expdir_off);
+        ed->Name = (u32)(tab_rva + own_off);
         ed->Base = 1;
         ed->NumberOfFunctions = (u32)ne;
         ed->NumberOfNames = (u32)ne;
-        ed->AddressOfFunctions = (u32)(data_rva + eat_off);
-        ed->AddressOfNames = (u32)(data_rva + enpt_off);
-        ed->AddressOfNameOrdinals = (u32)(data_rva + eord_off);
+        ed->AddressOfFunctions = (u32)(tab_rva + eat_off);
+        ed->AddressOfNames = (u32)(tab_rva + enpt_off);
+        ed->AddressOfNameOrdinals = (u32)(tab_rva + eord_off);
         for (int i = 0; i < ne; i++) {
-            wr32(buf + data_rva + eat_off + i * 4, (u32)(text_rva + exps[i].l->offset));
-            wr32(buf + data_rva + enpt_off + i * 4, (u32)(data_rva + exp_name_off[i]));
-            wr16(buf + data_rva + eord_off + i * 2, (unsigned)i);
+            int sec = exps[i].l->section;
+            wr32(buf + tab_rva + eat_off + i * 4, (u32)(sec_rva_of[sec] + exps[i].l->offset));
+            wr32(buf + tab_rva + enpt_off + i * 4, (u32)(tab_rva + exp_name_off[i]));
+            wr16(buf + tab_rva + eord_off + i * 2, (unsigned)i);
             for (int k = 0; k < exps[i].l->len; k++)
-                buf[data_rva + exp_name_off[i] + k] = (u8)exps[i].l->name[k];
+                buf[tab_rva + exp_name_off[i] + k] = (u8)exps[i].l->name[k];
         }
         for (int k = 0; own[k]; k++)
-            buf[data_rva + own_off + k] = (u8)own[k];
+            buf[tab_rva + own_off + k] = (u8)own[k];
     }
 
     int rsrc_size = nres ? win_resources(buf + rsrc_rva, rsrc_rva, res, nres) : 0;
@@ -3411,32 +3449,35 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         }
     }
 
-    // the sections that have something, in the order of their addresses; .bss has no bytes in the file
-    static const char *all_names[7] = { ".text", ".data", ".tls", ".pdata", ".rsrc", ".reloc", ".bss" };
-    static const u32 all_flags[7] = {
+    // the sections that have something, in the order of their addresses; .bss has no bytes in the file.
+    // .text: the code, then the tables, .pdata and resources (all read-only)
+    int text_vsize = rsrc_size ? rsrc_rva + rsrc_size - text_rva
+                   : pdata_size ? pdata_rva + pdata_size - text_rva : tab_rva + tab_size - text_rva;
+    static const char *all_names[5] = { ".text", ".data", ".tls", ".bss", ".reloc" };
+    static const u32 all_flags[5] = {
         PE_SCN_CODE | PE_SCN_EXECUTE | PE_SCN_READ,
         PE_SCN_INIT_DATA | PE_SCN_READ | PE_SCN_WRITE,
         PE_SCN_INIT_DATA | PE_SCN_READ | PE_SCN_WRITE,
-        PE_SCN_INIT_DATA | PE_SCN_READ,
-        PE_SCN_INIT_DATA | PE_SCN_READ,
-        PE_SCN_INIT_DATA | PE_SCN_READ | PE_SCN_DISCARDABLE,
         0x00000080 | PE_SCN_READ | PE_SCN_WRITE,        // uninitialized data
+        PE_SCN_INIT_DATA | PE_SCN_READ | PE_SCN_DISCARDABLE,
     };
-    int all_rva[7] = { text_rva, data_rva, tls_rva, pdata_rva, rsrc_rva, reloc_rva, bss_rva };
-    int all_size[7] = { text_size, data_vsize, tls_size, pdata_size, rsrc_size, reloc_size, bss_size };
-    const char *names[7];
-    u32 flags[7];
-    int sec_rva[7], sec_vsize[7], sec_raw[7], sec_ptr[7], sec_bss[7], sec_len[7];
+    int all_rva[5] = { text_rva, data_rva, tls_rva, bss_rva, reloc_rva };
+    int all_size[5] = { text_vsize, data_raw, tls_size, bss_size, reloc_size };
+    const u8 *all_bytes[5] = { buf + text_rva, buf + data_rva, buf + tls_rva, 0, relocs };
+    const char *names[5];
+    u32 flags[5];
+    const u8 *bytes[5];
+    int sec_rva[5], sec_vsize[5], sec_raw[5], sec_ptr[5], sec_bss[5], sec_len[5];
     int nsec = 0;
-    for (int i = 0; i < 7; i++)
-        if (i < 2 || all_size[i] || (i == 5 && bss_size)) {     // .reloc keeps its room before .bss
+    for (int i = 0; i < 5; i++)
+        if (i == 0 || all_size[i]) {
             names[nsec] = all_names[i];
             flags[nsec] = all_flags[i];
             sec_rva[nsec] = all_rva[i];
             sec_len[nsec] = all_size[i];        // the bytes it has
-            // the sections lie end to end: .reloc spans all it was given when .bss follows
-            sec_vsize[nsec] = i == 5 && bss_size ? reloc_cap : all_size[i];
-            sec_bss[nsec] = i == 6;
+            sec_vsize[nsec] = all_size[i];
+            sec_bss[nsec] = i == 3;
+            bytes[nsec] = all_bytes[i];
             nsec++;
         }
 
@@ -3453,11 +3494,9 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     u8 *file = cc_alloc((size_t)fpos);
     for (int i = 0; i < nsec; i++)
         for (int k = 0; k < sec_raw[i] && k < sec_vsize[i]; k++)
-            file[sec_ptr[i] + k] = buf[sec_rva[i] + k];
+            file[sec_ptr[i] + k] = bytes[i][k];
 
-    PeDos *dos = (PeDos *)file;
-    dos->e_magic = PE_DOS_MAGIC;
-    dos->e_lfanew = 0x80;
+    put_dos_stub(file);
     u8 *nt = file + 0x80;
     wr32(nt, PE_NT_MAGIC);
     PeFileHeader *fh = (PeFileHeader *)(nt + 4);
@@ -3493,13 +3532,13 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     op->SizeOfHeapCommit = 0x1000;
     op->NumberOfRvaAndSizes = 16;
     if (ne) {
-        op->DataDirectory[PE_DIR_EXPORT].VirtualAddress = (u32)(data_rva + expdir_off);
+        op->DataDirectory[PE_DIR_EXPORT].VirtualAddress = (u32)(tab_rva + expdir_off);
         op->DataDirectory[PE_DIR_EXPORT].Size = (u32)(own_off + cc_strlen(own) + 1 - expdir_off);
     }
     if (ndll) {
-        op->DataDirectory[PE_DIR_IMPORT].VirtualAddress = (u32)(data_rva + impdesc_off);
+        op->DataDirectory[PE_DIR_IMPORT].VirtualAddress = (u32)(tab_rva + impdesc_off);
         op->DataDirectory[PE_DIR_IMPORT].Size = (u32)((ndll + 1) * sizeof(PeImportDesc));
-        op->DataDirectory[PE_DIR_IAT].VirtualAddress = (u32)(data_rva + iat_off);
+        op->DataDirectory[PE_DIR_IAT].VirtualAddress = (u32)(tab_rva + iat_off);
         op->DataDirectory[PE_DIR_IAT].Size = (u32)(nslot * 8);
     }
     if (reloc_size) {
@@ -3515,7 +3554,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         op->DataDirectory[3].Size = (u32)(12 * npf);
     }
     if (tls_size) {
-        op->DataDirectory[9].VirtualAddress = (u32)(data_rva + tlsdir_off);
+        op->DataDirectory[9].VirtualAddress = (u32)(tab_rva + tlsdir_off);
         op->DataDirectory[9].Size = 40;
     }
 

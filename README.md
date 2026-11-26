@@ -33,6 +33,7 @@ wcc main.c mylib.lib -I inc      a program that takes it: only the functions it 
 -I dir  -D NAME=1  -S (assembly to .s)  --stack MB (default 8)  --run (build and run)
 -g                               debug info for the WinCC debugger next to the program (prog.wdbg)
 -O0                              no register variables: every variable in memory (for debugging)
+--manifest                       WinCC's manifest: A-functions take UTF-8, modern controls (also #pragma comment(linker, "/MANIFEST"))
 ```
 
 Errors are printed as `file:line: text` (messages are in Russian); warnings (`#warning`, an unknown `\x` escape in a
@@ -47,7 +48,7 @@ the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 12
 |---|---|
 | `compiler\` | the compiler (C, built with MSVC from VS 2026) |
 | `compiler\tokenize.c preprocess.c parse.c type.c codegen.c` | parser and code generator from DynastyOS; for Windows: `long` is 4 bytes, `wchar_t` and `L""` are UTF-16, `#pragma pack`, `#pragma comment(lib)`, `asm("…")` outside functions, MSVC keywords (`__stdcall`, `__int64`…); bit-fields laid out as by MSVC (`parse.c`: `struct_decl`, `union_decl`; reads by shifts, writes with a mask — `codegen.c`); `_Static_assert`, `__func__`, `__DATE__`/`__TIME__`/`__COUNTER__`, `#line`, `#warning`; `_Alignas` and `__declspec(align)` on globals, statics, locals (over 16 — stack memory with the required alignment) and fields; `__declspec(naked)`, `selectany`. C11: `typeof`, `_Generic`, variable-length arrays (`parse.c`: `compute_vla_size`, `codegen.c`: `ND_ALLOCA`; the stack does not grow inside a loop), `_alloca`, `_Atomic` (a `lock cmpxchg` loop), `__builtin_atomic_cas/exchange/fetch_add`, K&R (`knr_params`), designated initializers into anonymous members; thread-local variables — `.tls` section (`gs:[0x58]`, `__wcc_tls_index`); `__try`/`__except`/`__finally`/`__leave` (`try_stmt`; the filter and `__finally` are separate funclets, `emit_funclet`); `@name` in `asm()` — a local variable's location |
-| `compiler\asm.c` | the assembler; at the end, the Windows `.exe`/`.dll` writer (`cc_assemble_win`): imports per DLL, entry point, manifest in `.rsrc`, ASLR/NX, `.bss` (zeros without file space), `.tls` with a TLS directory, `.pdata` with unwind info (`.seh_proc`, `.seh_scope`, `.seh_endproc` directives; the `__try` handler is `__C_specific_handler` from ntdll); instructions: `cmpxchg xadd bsf bsr`, x87, `popcnt lzcnt tzcnt bswap bt* loop jrcxz movabs syscall rdrand crc32 prefetch*`, SSE2–SSE4.2 (`sse_ex`), AVX with `ymm` (`avx`, VEX encoding — `vex`), `gs:`/`fs:`; numeric labels `1:`/`1b`/`1f`; `.srcfile` — an error in a `.asm` file names its line; `.alias`, `.gc` directives |
+| `compiler\asm.c` | the assembler; at the end, the Windows `.exe`/`.dll` writer (`cc_assemble_win`): one `.text` section with the code, string literals, import/export tables, the TLS directory, `.pdata` (only with `__try` or `signal`) and resources after it, other sections only when not empty (an empty program is 1 KB: headers and `.text`), imports per DLL, entry point, the manifest on request, ASLR/NX, `.bss` (zeros without file space), `.tls` with a TLS directory, `.pdata` with unwind info (`.seh_proc`, `.seh_scope`, `.seh_endproc` directives; the `__try` handler is `__C_specific_handler` from ntdll); instructions: `cmpxchg xadd bsf bsr`, x87, `popcnt lzcnt tzcnt bswap bt* loop jrcxz movabs syscall rdrand crc32 prefetch*`, SSE2–SSE4.2 (`sse_ex`), AVX with `ymm` (`avx`, VEX encoding — `vex`), `gs:`/`fs:`; numeric labels `1:`/`1b`/`1f`; `.srcfile` — an error in a `.asm` file names its line; `.alias`, `.gc` directives |
 | `compiler\strip.c` | drops library functions and data the program never reaches |
 | `compiler\winlink.c` | which DLL provides a name: export tables are read straight from the DLL files (System32 and the program folder), no `.lib` needed |
 | `compiler\cc.c` | `cc_build_win`: the build, finding main/wmain/WinMain/wWinMain/DllMain and the program entry |
@@ -62,7 +63,8 @@ the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 12
 | `runtime\winthread.c` | stdio lock, `threads.h` (C11), `process.h` (`_beginthreadex`, `_spawnv`…) |
 | `runtime\winlocale.c` | Windows locales: names ("Russian" → `ru_RU.UTF-8`), month and day names, decimal point, `strcoll`, time zone for `%Z` |
 | `runtime\conio.c`, `runtime\cmath.c` | `conio.h` (`_getch`, `_kbhit`…); `complex.h` (Microsoft style) and `fenv.h` |
-| `runtime\start.c` | program start: command line → argc/argv in UTF-8, CPU faults → C signals (last-chance handler: `__try` first), DllMain |
+| `runtime\start.c` | program start — a program gets only what it uses: an entry without parameters (`main(void)`, `WinMain(void)`) is called directly and ends with `ExitProcess` (an empty program imports `ExitProcess` alone); with parameters, the start of its kind (`__wcc_start_main/_wmain/_winmain/_wwinmain`) makes argc/argv in UTF-8 or WinMain's instance and line; the end (atexit, output and files written out) is set by the library on first use (`__wcc_at_end`); CPU faults → C signals only after the program's own `signal(SIGSEGV/SIGFPE/SIGILL)` (last-chance handler: `__try` first); DllMain |
+| `compiler\stub.bin` | the DOS stub of every `.exe` and `.dll` (64 bytes, `mov ah, 4Ch; int 21h`); its bytes are built into `asm.c` (`g_dos_stub`), the PE headers follow at `0x80` |
 | `runtime\wingdi.c` | TextOutA, DrawTextA… for UTF-8: GDI receives the same text as UTF-16 |
 | `runtime\rtasm.asm` | setjmp/longjmp, CPU helpers; `memcpy`, `memmove`, `memset` (`rep movsb`/`stosb`), `strlen` (SSE2) |
 | `include\windows.h`, `include\win\*.h` | Windows: types, structures, constants, functions of kernel32, user32, gdi32, comdlg32, shell32, advapi32; `except.h` — exceptions (`EXCEPTION_*`, `CONTEXT`, `RaiseException`) |
@@ -88,7 +90,9 @@ the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 12
 | `setup\` | the installer (`make-setup.ps1`, `Installer.cs`, `SetupWindow.xaml`) |
 | `docs\руководство\` | **WinCC Manual** (in Russian) — a book for people writing programs with WinCC: chapters as text, `python сборка.py` builds the PDF, `python "сборка chm.py"` builds the Windows help file `Руководство WinCC.chm` (needs HTML Help Workshop), `python "проверка примеров.py"` compiles every example of the book |
 
-**Unicode.** Sources are UTF-8. Every `.exe` carries a manifest that sets the program's code page to UTF-8, so
+**Unicode.** Sources are UTF-8. The console, files, `argv` and GDI text get UTF-8 through the library's own W-calls.
+For the A-functions of Windows a program asks for WinCC's manifest — `#pragma comment(linker, "/MANIFEST")` or
+`wcc --manifest` (none by default: an empty program is 1 KB) — which sets its code page to UTF-8, so
 `MessageBoxA`, `CreateWindowExA`, `SetWindowTextA` and the other A-functions take the program's text as is. GDI ignores
 the manifest, so `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`, `CreateFontA` go through
 `runtime\wingdi.c`. With `#define UNICODE` before `windows.h` the plain names are the W-functions (UTF-16, `L"…"`,
@@ -338,7 +342,8 @@ compares every resource.
 - File paths are relative to the `.rc` folder, then the `-I` folders; both `"res\\app.ico"` and `"res\app.ico"` work.
 - As in rc.exe: icon and cursor images share one counter; a quoted name (`"NAME" RCDATA …`) is stored with its quotes;
   a resource with the same type, name and language — the last one wins.
-- The WinCC manifest (UTF-8 code page, Common Controls 6) is added automatically; your own `1 24 "x.manifest"` replaces it.
+- The WinCC manifest (UTF-8 code page, Common Controls 6) is added when the program asks for it (`--manifest`,
+  `#pragma comment(linker, "/MANIFEST")`); your own `1 24 "x.manifest"` replaces it.
 - A ready `.res` (rc.exe, windres) — `wcc app.c app.res`: resources are taken as they are.
 - Tests: `tests\win_res.c` — Windows itself loads every resource (16 and 32 px icons as BMP and PNG, cursor, bitmap,
   data, strings in two languages, version, both menu kinds, accelerators, both dialog kinds); `tests\res\compare.ps1` —

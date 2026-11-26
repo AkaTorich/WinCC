@@ -10,6 +10,7 @@ int main(void) { return 0; }
 #include <stdlib.h>
 #include <string.h>
 #include "win_res.h"
+#pragma comment(linker, "/MANIFEST")    // WinCC's manifest beside the program's resources (asked for)
 
 static int failed;
 #define CHECK(c) do { if (!(c)) { printf("ПРОВАЛ строка %d: %s\n", __LINE__, #c); failed++; } } while (0)
