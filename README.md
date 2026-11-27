@@ -11,6 +11,8 @@ into it, and only what the program actually calls ends up inside (hello.exe is a
   screens…), a custom window with shadow and rounded corners, buttons, fields, lists, tabs, side menu. See "Window styling" below.
 - `net.h` — networking: download a page or a file (HTTP and HTTPS), server requests, TCP, UDP, your own web server.
   Underneath are the usual `winsock2.h`, `ws2tcpip.h`, `winhttp.h`, as in Visual Studio. See "Networking" below.
+- `hcrypt.h` — ciphers, hashes and compression: SHA-256, HMAC, PBKDF2, BLAKE2b, Argon2id, AES-256-GCM/CBC,
+  ChaCha20-Poly1305, ECDSA P-256, gzip. See "Encryption" below.
 
 Download the installer from [Releases](https://github.com/AkaTorich/WinCC/releases): it installs into
 `%LOCALAPPDATA%\Programs\WinCC`, adds `wcc` to `PATH`, creates shortcuts and "Open with" for `.c`/`.h`, and ships
@@ -78,6 +80,8 @@ the C source line. A source file may be UTF-8, UTF-16 (with BOM) or code page 12
 | `include\winsock2.h ws2tcpip.h winhttp.h` (+ `winsock.h`, `ws2ipdef.h` — forward to `winsock2.h`) | `ws2_32` sockets (TCP, UDP, IPv4 and IPv6, select, WSAPoll, window and event notifications, getaddrinfo, inet_pton) and `winhttp` HTTP/HTTPS (requests, headers, proxy, timeouts, WebSocket). 100 functions, all checked against the DLL exports; every constant and structure size checked against MSVC (`tests\winabi\abi.ps1`) |
 | `include\net.h` | the networking library — everything a program calls (see "Networking") |
 | `lib\net\` | its sources: `core.c` — errors in Windows' own words, UTF-8 ↔ UTF-16, `%XX`, names; `http.c` — HTTP/HTTPS via WinHTTP; `tcp.c` — connections; `udp.c` — datagrams; `server.c` — the web server (a thread per connection, up to 64, handler serialized under a lock); `net_int.h` — internal shared declarations |
+| `include\hcrypt.h` | the cipher library — everything a program calls (see "Encryption") |
+| `lib\hcrypt\` | its sources, from DynastyOS: `hcrypt.c` — all the ciphers, hashes, P-256, deflate; `inflate.c` — unpacking for `gzip_unpack`; `hc_host.c` — what the DynastyOS kernel gave, made of Windows calls (memory by pages, Argon2id lanes on threads, entropy, the `local_seal` key file); `hc_simd.h` — the SSE intrinsics it uses (AES-NI, PCLMULQDQ, SSSE3, RDRAND/RDSEED) as `asm` macros; `hc_internal.h` — the `hc_*` names of the code turned into the names of `hcrypt.h` |
 | `include\gdiplus.h` | GDI+ for C — the flat functions of `gdiplus.dll` (like `GdiPlusFlat.h` in the SDK): antialiased shapes, brushes and gradients, pens, paths, regions, rotation and scaling, ClearType text, images (load, draw, pixels, save — `GdipEncoderPng`, `…Jpeg`, `…Bmp`, `…Gif`, `…Tiff`), icon from an image. 183 functions, all checked against the `gdiplus.dll` exports; test — `tests\win_gdiplus.c` |
 | `include\wui.h`, `include\wui_icons.h` | the WUI styling library — everything a program calls; ThemeLibrary icons (`WUI_ICON_HOME`…) |
 | `lib\wui\` | WUI sources — see "Window styling" |
@@ -250,6 +254,36 @@ int main(void) {
   No reply means 404. Stop with `net_http_stop` (also from a handler: `net_http_server(r)`).
 - **Errors:** functions return 0 or -1, `net_error()` says why — in Windows' own words, in the system language
   ("The server name or address could not be resolved (12007)"). Each thread has its own error.
+
+## Encryption: `hcrypt.h`
+
+One line, `#include <hcrypt.h>`: wcc builds the `lib\hcrypt` folder together with the program and drops what is
+unused. The library came from DynastyOS and gives byte for byte what the .NET programs of the «Гермес» suite give
+(Windows CNG, DPAPI, GZipStream). The program needs only `kernel32`.
+
+```c
+#include <hcrypt.h>
+unsigned char key[32], nonce[12], tag[16];
+random_bytes(key, 32); random_bytes(nonce, 12);
+aes256gcm_encrypt(key, nonce, 0, 0, text, n, text, tag);           // in place
+if (!aes256gcm_decrypt(key, nonce, 0, 0, text, n, tag, text)) ...  // forged or the wrong key
+```
+
+- **Hashes and keys:** `sha256` (whole or `sha256_begin/update/end`), `hmac_sha256` (the same), `pbkdf2_sha256`
+  (as `Rfc2898DeriveBytes`), `blake2b`, `argon2id` (each lane on its own thread), `crc32`, `crc32_update`,
+  `secure_equal` (constant time), `random_bytes` (rdseed/rdrand and the clocks through SHA-256).
+- **Ciphers:** `aes256gcm_*`, `aes256cbc_*` (PKCS7, or whole blocks for streams), `aes256ctr_le` (WinZip AES),
+  `chacha20_xor`, `poly1305`, `xchacha20poly1305_*`, `aes128_block`, `aes_cmac`. AES and GCM use the processor's
+  AES-NI and PCLMULQDQ when it has them, tables otherwise.
+- **Signatures and shared keys:** ECDSA P-256 + SHA-256 (`p256_keygen`, `p256_sign` — k by RFC 6979, `p256_verify`),
+  ECDH (`p256_keypair`, `p256_public`, `p256_shared`).
+- **Compression:** `gzip_pack`, `gzip_unpack`, `gzip_unpacked_size`; a deflate stream in pieces of any length
+  (`deflate_new`, `deflate_piece`, `deflate_free`).
+- **Sealed to this user:** `local_seal` / `local_unseal` (instead of DPAPI): AES-256-GCM with a key made at the first
+  use in `%LOCALAPPDATA%\hcrypt\hcrypt.key`.
+
+Test — `tests\hcrypt.c`: every function against the published vectors (FIPS 197, NIST GCM and CBC, RFC 4231, 4493,
+6979, 8439, 9106), the rest by round trips; built with `-DHCRYPT_TEST` it runs the table path too.
 
 ## Your own libraries: DLL and `.lib`
 

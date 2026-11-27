@@ -114,18 +114,19 @@
 
 ## windows.h
 
-`windows.h` WinCC — один заголовок, разложенный на восемь файлов в папке `include\win`. Он сам подключает `stddef.h`, `stdarg.h`, `string.h`, `wchar.h` и `sal.h` и определяет имена `_WINDOWS_`, `_WINDEF_`, `_WINBASE_`, `_WINUSER_`, `_WINGDI_`, по которым чужой код проверяет, подключён ли `windows.h`.
+`windows.h` WinCC — один заголовок, разложенный на девять файлов в папке `include\win`. Он сам подключает `stddef.h`, `stdarg.h`, `string.h`, `wchar.h` и `sal.h` и определяет имена `_WINDOWS_`, `_WINDEF_`, `_WINBASE_`, `_WINUSER_`, `_WINGDI_`, по которым чужой код проверяет, подключён ли `windows.h`.
 
 := Файл | DLL | Функций | Что в нём
 : `win\types.h` | — | — | типы (`DWORD`, `HANDLE`, `HWND`, `LPSTR`…), `RECT`, `POINT`, `SYSTEMTIME`, `GUID`, макросы, коды ошибок
-: `win\kernel32.h` | kernel32, библиотека WinCC | 220 | процессы, потоки, файлы, память, время, кодировки, консоль, DLL; атомарные `Interlocked…` — из библиотеки WinCC
+: `win\kernel32.h` | kernel32, библиотека WinCC | 224 | процессы, потоки, файлы, память, время, кодировки, консоль, DLL, папки Windows и System32; атомарные `Interlocked…` — из библиотеки WinCC
 : `win\user32.h` | user32 | 254 | окна, сообщения, элементы, меню, мышь, клавиатура, таймеры, буфер обмена
 : `win\gdi32.h` | gdi32, user32 | 105 | рисование GDI, текст, картинки, области; 11 из них — переходники WinCC
 : `win\comdlg32.h` | comdlg32 | 9 | диалоги «Открыть», «Сохранить», выбор цвета и шрифта
 : `win\shell32.h` | shell32, ole32 | 31 | открыть файл программой, перетаскивание, значок в трее, папки Windows, выбор папки, память оболочки и запуск COM
 : `win\advapi32.h` | advapi32 | 21 | реестр, имя пользователя
 : `win\except.h` | kernel32 | 13 | исключения: коды, `EXCEPTION_RECORD`, `CONTEXT`, `EXCEPTION_POINTERS`, `RaiseException`, обработчики всей программы
-: всего | | 653 |
+: `win\image.h` | — | — | заголовки файла .exe и .dll: `IMAGE_DOS_HEADER`, `IMAGE_NT_HEADERS64`, `IMAGE_SECTION_HEADER`, `IMAGE_EXPORT_DIRECTORY`, `IMAGE_FIRST_SECTION`, номера каталогов `IMAGE_DIRECTORY_ENTRY_…`
+: всего | | 657 |
 
 Строк `#define` в этих файлах 1475 — константы и макросы, из них 851 — в `user32.h`: сообщения `WM_`, стили `WS_` и `ES_`, коды клавиш `VK_`, флаги `MB_`, `SW_`, `MF_`.
 
@@ -331,7 +332,7 @@ A-функции берут UTF-8, когда в программе есть м�
 : точки | GdipBitmapGetPixel, GdipBitmapSetPixel, GdipBitmapLockBits, GdipBitmapUnlockBits
 : цвет картинок | GdipCreateImageAttributes, GdipDisposeImageAttributes, GdipSetImageAttributesColorMatrix
 
-## Сеть, WUI и Elements
+## Сеть, шифры, WUI и Elements
 
 Подробно об этих заголовках — в частях IV, V и VI.
 
@@ -342,6 +343,7 @@ A-функции берут UTF-8, когда в программе есть м�
 : `winhttp.h` | HTTP и HTTPS: запросы, заголовки, прокси, тайм-ауты, WebSocket — глава 21 | 33 | winhttp
 : `winsock.h`, `ws2ipdef.h` | только подключают `winsock2.h` | — | —
 : `net.h` | библиотека сети: HTTP, TCP, UDP, свой веб-сервер — главы 18–20, приложение Д | 47 | `lib\net` исходниками
+: `hcrypt.h` | библиотека шифров: SHA-256, HMAC, PBKDF2, BLAKE2b, Argon2id, AES-256-GCM и CBC, ChaCha20-Poly1305, подписи ECDSA P-256, ECDH, gzip, печать `local_seal` вместо DPAPI; что делает каждая функция — написано рядом с ней в самом заголовке | 42 | `lib\hcrypt` исходниками
 : `wui.h` | библиотека оформления окон WUI — главы 13–17, приложение Г | 72 | `lib\wui` исходниками
 : `wui_icons.h` | 123 значка ThemeLibrary: `WUI_ICON_HOME`… — глава 16 | — | —
 : `elements.h` | библиотека окон Elements: свои формы окон, эффекты, элементы, шрифты — глава 24, приложение Ж | — | `lib\elements` исходниками

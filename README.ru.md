@@ -11,6 +11,8 @@
   своё окно с тенью и скруглёнными углами, кнопки, поля, списки, вкладки, меню сбоку. Раздел «Оформление окон» ниже.
 - `net.h` — сеть: скачать страницу или файл (HTTP и HTTPS), запросы к серверам, TCP, UDP, свой веб-сервер.
   Под ним — обычные `winsock2.h`, `ws2tcpip.h`, `winhttp.h`, как в Visual Studio. Раздел «Сеть» ниже.
+- `hcrypt.h` — шифры, хеши и сжатие: SHA-256, HMAC, PBKDF2, BLAKE2b, Argon2id, AES-256-GCM/CBC,
+  ChaCha20-Poly1305, ECDSA P-256, gzip. Раздел «Шифрование» ниже.
 
 ## Командная строка
 
@@ -73,6 +75,8 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 | `include\winsock2.h ws2tcpip.h winhttp.h` (+ `winsock.h`, `ws2ipdef.h` — ведут в `winsock2.h`) | сокеты `ws2_32` (TCP, UDP, IPv4 и IPv6, select, WSAPoll, события в окно и в объект, getaddrinfo, inet_pton) и HTTP/HTTPS `winhttp` (запросы, заголовки, прокси, тайм-ауты, WebSocket). 100 функций, все сверены с экспортами DLL; каждое число и размер структуры — с MSVC (`tests\winabi\abi.ps1`) |
 | `include\net.h` | библиотека сети — всё, что зовёт программа (раздел «Сеть») |
 | `lib\net\` | она же исходниками: `core.c` — ошибки словами Windows, UTF-8 ↔ UTF-16, `%XX`, имена; `http.c` — HTTP/HTTPS через WinHTTP; `tcp.c` — соединения; `udp.c` — пакеты; `server.c` — свой веб-сервер (поток на соединение, до 64, обработчик по одному под замком); `net_int.h` — общее внутри |
+| `include\hcrypt.h` | библиотека шифров — всё, что зовёт программа (раздел «Шифрование») |
+| `lib\hcrypt\` | она же исходниками, из DynastyOS: `hcrypt.c` — все шифры, хеши, P-256, deflate; `inflate.c` — распаковка для `gzip_unpack`; `hc_host.c` — то, что давало ядро DynastyOS, вызовами Windows (память страницами, полосы Argon2id в потоках, случайность, файл ключа `local_seal`); `hc_simd.h` — нужные ей команды SSE (AES-NI, PCLMULQDQ, SSSE3, RDRAND/RDSEED) макросами с `asm`; `hc_internal.h` — имена `hc_*` из кода в имена `hcrypt.h` |
 | `include\gdiplus.h` | GDI+ для Си — плоские функции `gdiplus.dll` (как `GdiPlusFlat.h` в SDK): сглаженные фигуры, кисти и градиенты, перья, контуры, области, повороты и масштаб, текст ClearType, картинки (загрузка, рисование, пиксели, сохранение — `GdipEncoderPng`, `…Jpeg`, `…Bmp`, `…Gif`, `…Tiff`), значок из картинки. 183 функции, все сверены с экспортами `gdiplus.dll`; тест — `tests\win_gdiplus.c` |
 | `include\wui.h`, `include\wui_icons.h` | библиотека оформления WUI — всё, что зовёт программа; значки ThemeLibrary (`WUI_ICON_HOME`…) |
 | `lib\wui\` | WUI исходниками — раздел «Оформление окон» |
@@ -240,6 +244,36 @@ int main(void) {
   Не ответил — уходит 404. Остановить — `net_http_stop` (можно из обработчика: `net_http_server(r)`).
 - **Ошибки:** функции возвращают 0 или -1, `net_error()` говорит почему — словами самой Windows, на языке системы
   («Не удается разрешить имя или адрес сервера (12007)»). У каждого потока своя ошибка.
+
+## Шифрование: `hcrypt.h`
+
+Подключается одной строкой `#include <hcrypt.h>`: wcc сам собирает с программой папку `lib\hcrypt` и выбрасывает
+лишнее. Библиотека пришла из DynastyOS и даёт байт в байт то же, что .NET-программы «Гермеса» (Windows CNG, DPAPI,
+GZipStream). Программе нужен только `kernel32`.
+
+```c
+#include <hcrypt.h>
+unsigned char key[32], nonce[12], tag[16];
+random_bytes(key, 32); random_bytes(nonce, 12);
+aes256gcm_encrypt(key, nonce, 0, 0, text, n, text, tag);           // на месте
+if (!aes256gcm_decrypt(key, nonce, 0, 0, text, n, tag, text)) ...  // подделка или не тот ключ
+```
+
+- **Хеши и ключи:** `sha256` (целиком или `sha256_begin/update/end`), `hmac_sha256` (так же), `pbkdf2_sha256`
+  (как `Rfc2898DeriveBytes`), `blake2b`, `argon2id` (каждая полоса в своём потоке), `crc32`, `crc32_update`,
+  `secure_equal` (за равное время), `random_bytes` (rdseed/rdrand и часы через SHA-256).
+- **Шифры:** `aes256gcm_*`, `aes256cbc_*` (PKCS7 или целыми блоками для потоков), `aes256ctr_le` (WinZip AES),
+  `chacha20_xor`, `poly1305`, `xchacha20poly1305_*`, `aes128_block`, `aes_cmac`. AES и GCM идут командами процессора
+  AES-NI и PCLMULQDQ, если они есть, иначе таблицами.
+- **Подписи и общий ключ:** ECDSA P-256 + SHA-256 (`p256_keygen`, `p256_sign` — k по RFC 6979, `p256_verify`),
+  ECDH (`p256_keypair`, `p256_public`, `p256_shared`).
+- **Сжатие:** `gzip_pack`, `gzip_unpack`, `gzip_unpacked_size`; поток deflate кусками любой длины
+  (`deflate_new`, `deflate_piece`, `deflate_free`).
+- **Печать этого пользователя:** `local_seal` / `local_unseal` (вместо DPAPI): AES-256-GCM с ключом, который
+  делается при первом вызове в `%LOCALAPPDATA%\hcrypt\hcrypt.key`.
+
+Тест — `tests\hcrypt.c`: каждая функция по опубликованным значениям (FIPS 197, NIST GCM и CBC, RFC 4231, 4493,
+6979, 8439, 9106), остальное — туда и обратно; собранный с `-DHCRYPT_TEST`, он проверяет и путь таблицами.
 
 ## Свои библиотеки: DLL и `.lib`
 
