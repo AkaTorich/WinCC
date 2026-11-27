@@ -103,6 +103,8 @@ the manifest, so `TextOutA`, `DrawTextA`, `ExtTextOutA`, `GetTextExtentPoint32A`
 ## Building
 
 - `build.cmd` — builds `wcc.exe` into the root (MSVC, Release flags `/O2`).
+- `build-self.cmd` — builds `wcc.exe` with `wcc.exe` itself, no Visual Studio; built by itself again it gives the
+  same bytes. `include\win\image.h` (PE headers) and `GetSystemDirectory` in `kernel32.h` are there for it.
 - `ide\` — `dotnet build -c Release`; `WinCC.exe` is copied into the root.
 - `compiler\build-cctest.cmd` — cctest for DynastyOS mode.
 - **Installer:** `powershell -ExecutionPolicy Bypass -File setup\make-setup.ps1` — builds `wcc.exe` and `WinCC.exe`,

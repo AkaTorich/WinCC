@@ -31,5 +31,6 @@
 #include "win/advapi32.h"
 #include "win/resource.h"
 #include "win/except.h"
+#include "win/image.h"
 
 #endif

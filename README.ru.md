@@ -97,6 +97,8 @@ wcc main.c моя.lib -I папка      программа с ней: в про
 ## Сборка
 
 - `build.cmd` — собирает `wcc.exe` в корень (MSVC, Release-ключи `/O2`).
+- `build-self.cmd` — собирает `wcc.exe` самим `wcc.exe`, без Visual Studio; собранный им самим снова, он даёт те же
+  байты. Для этого есть `include\win\image.h` (заголовки PE) и `GetSystemDirectory` в `kernel32.h`.
 - `ide\` — `dotnet build -c Release`, `WinCC.exe` копируется в корень.
 - `compiler\build-cctest.cmd` — cctest для режима DynastyOS.
 - **Установщик:** `powershell -ExecutionPolicy Bypass -File setup\make-setup.ps1` — собирает `wcc.exe` и `WinCC.exe`,

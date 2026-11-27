@@ -40,6 +40,9 @@ void *cc_alloc(size_t size)
 
 void cc_free_all(void) { g_arena = 0; }
 void *cc_alloc_code(size_t size) { return VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE); }
+
+// wcc built by wcc: the WinCC library inside it has these hooks already (runtime\winhost.c)
+#ifndef __WINCC__
 void cc_print(const char *text) { fputs(text, stdout); }
 
 // The library compiled into wcc itself is used only for strtod (tokenize.c); its hooks do nothing here.
@@ -57,11 +60,13 @@ void cc_now(int t[6])               // __DATE__ and __TIME__ of the preprocessor
     t[3] = st.wHour; t[4] = st.wMinute; t[5] = st.wSecond;
 }
 
-static void print_warning(const char *text) { fprintf(stderr, "%s\n", text); }
 u64 cc_millis(void) { return GetTickCount64(); }
 u64 cc_irq_off(void) { return 0; }
 void cc_irq_restore(u64 f) { (void)f; }
 void *cc_heap_more(size_t want, size_t *got) { (void)want; *got = 0; return 0; }
+#endif
+
+static void print_warning(const char *text) { fprintf(stderr, "%s\n", text); }
 
 // ---- files: names are UTF-8 inside the compiler ----
 
