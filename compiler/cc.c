@@ -405,6 +405,16 @@ int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget 
         t->manifest = 1;
     all = cc_join(all, "", win_entry_stub(t, all));
     all = cc_strip_unused(all);         // the library's functions the program never reaches stay out
+    // nothing in the program needs an end (no output, files, atexit: need_end did not stay) -- the
+    // entry calls ExitProcess itself, and __wcc_finish with __wcc_at_end goes too
+    if (t->exe && !has_label(all, "need_end")) {
+        // the entry's line (win_entry_stub) is rewritten in place: both are 20 characters with the newline
+        static const char from[] = "  call __wcc_finish\n", to[] = "  call @ExitProcess\n";
+        for (char *p = all; *p; p++)
+            if (cc_strneq(p, from, 20))
+                for (int k = 0; k < 20; k++) p[k] = to[k];
+        all = cc_strip_unused(all);
+    }
     all = cc_peephole(all);
     if (asm_text)
         *asm_text = all;

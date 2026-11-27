@@ -105,6 +105,7 @@ struct Asm {
     AliasDef *aliases, *alias_tail;
     struct BaseReloc *base_relocs;
     int base_reloc_count;
+    int pass1_abs;     // absolute addresses seen in pass 1: base relocations will be there
     // debug info (PE mode, recorded in pass 1): the .dydbg section
     struct DbgLine *dlines;
     int ndl, dlcap;
@@ -759,6 +760,8 @@ static void emit_imm(Asm *as, Operand *op, int bytes)
             return;
         }
     }
+    if (op->sym && as->pe && as->pass == 1)
+        as->pass1_abs++;                // a base relocation comes (wcc --tiny: the header keeps room for its directory)
     if (op->sym && as->pe && as->pass == 2) {
         // An absolute address inside a DLL: store preferred VA and add a base
         // relocation so the loader fixes it up. Only 64-bit (dq / mov imm64).
@@ -3206,7 +3209,17 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     const int SA = t->tiny ? 16 : PE_SECT_ALIGN;
     const int FA = t->tiny ? 16 : WIN_FILE_ALIGN;
     int nt_at = t->tiny ? 0x40 : 0x80;
-    int ndirs = t->tiny ? (tls_size ? 10 : 6) : 16;
+    // tiny: directories up to the last one used -- TLS 9, base relocations 5, exceptions 3,
+    // resources 2, imports 1 (exports 0); .pdata and resources are known here, relocations by pass 1
+    int pdata_known = 0;
+    for (int i = 0; i < as->nproc && !pdata_known; i++)
+        if (as->procs[i].nscopes) pdata_known = 1;
+    {
+        Label *w = find_label(as, "__wcc_watch_faults", 18);
+        if (w && w->defined) pdata_known = 1;
+    }
+    int ndirs = !t->tiny ? 16 : tls_size ? 10 : as->pass1_abs ? 6 : pdata_known ? 4
+              : (t->nres || (t->exe && t->manifest)) ? 3 : 2;
     int opt_size = (int)sizeof(PeOpt64) - (16 - ndirs) * 8;
     int hdr_room = nt_at + 4 + (int)sizeof(PeFileHeader) + opt_size + (t->tiny ? 1 : 5) * (int)sizeof(PeSection);
     int text_rva = t->tiny ? pe_align(hdr_room, SA) : SA;
@@ -3571,6 +3584,8 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     op->SizeOfHeapReserve = 0x100000;
     op->SizeOfHeapCommit = 0x1000;
     op->NumberOfRvaAndSizes = (u32)ndirs;
+    if ((reloc_size && ndirs <= PE_DIR_BASERELOC) || (pdata_size && ndirs <= 3) || (rsrc_size && ndirs <= PE_DIR_RESOURCE))
+        cc_error_at(0, 0, "ассемблер: --tiny: в заголовке нет места для каталога (%d)", ndirs);
     if (ne) {
         op->DataDirectory[PE_DIR_EXPORT].VirtualAddress = (u32)(tab_rva + expdir_off);
         op->DataDirectory[PE_DIR_EXPORT].Size = (u32)(own_off + cc_strlen(own) + 1 - expdir_off);
