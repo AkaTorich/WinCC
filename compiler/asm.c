@@ -3136,6 +3136,8 @@ static void write_unwind(u8 *u, const SehProc *f)
     *c++ = 1; *c++ = 0x50;                                  // push rbp
 }
 
+int cc_win_import_count;
+
 int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_size)
 {
     Asm *as = cc_alloc(sizeof(Asm));
@@ -3181,6 +3183,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         nslot++;                                // the zero slot that ends this DLL's run
         ndll++;
     }
+    cc_win_import_count = norder;
 
     // exported labels
     int ne = 0;
@@ -3219,7 +3222,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         if (w && w->defined) pdata_known = 1;
     }
     int ndirs = !t->tiny ? 16 : tls_size ? 10 : as->pass1_abs ? 6 : pdata_known ? 4
-              : (t->nres || (t->exe && t->manifest)) ? 3 : 2;
+              : (t->nres || (t->exe && t->manifest)) ? 3 : ndll ? 2 : ne ? 1 : 0;
     int opt_size = (int)sizeof(PeOpt64) - (16 - ndirs) * 8;
     int hdr_room = nt_at + 4 + (int)sizeof(PeFileHeader) + opt_size + (t->tiny ? 1 : 5) * (int)sizeof(PeSection);
     int text_rva = t->tiny ? pe_align(hdr_room, SA) : SA;
@@ -3451,7 +3454,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         for (int k = 0; k < n_extra; k++)
             rvas[nr++] = extra_rel[k];
         sort_ints(rvas, cc_alloc(sizeof(int) * (size_t)(nr + 1)), nr);
-        u8 *rp = buf + reloc_rva;
+        u8 *rp = relocs;                        // their own buffer: .reloc comes after .bss, not in buf
         for (int i = 0; i < nr;) {
             u32 page = (u32)rvas[i] & ~0xFFFu;
             int j = i;
@@ -3471,6 +3474,8 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
             reloc_size += block;
             i = j;
         }
+        if (reloc_size > reloc_cap)
+            cc_error_at(0, 0, "ассемблер: поправок адресов больше места под них (%d > %d)", reloc_size, reloc_cap);
     }
 
     // the sections that have something, in the order of their addresses; .bss has no bytes in the file.
@@ -3542,10 +3547,17 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         sec_ptr[i] = sec_raw[i] ? fpos : 0;
         fpos += sec_raw[i];
     }
+    // tiny: Windows does not take an image file shorter than 336 bytes -- the last section gets zeros
+    // in the file only; its size in memory stays its own (made equal, a new file fails on its first start)
+    const int tiny_min = 336;
+    if (t->tiny && fpos < tiny_min) {
+        sec_raw[nsec - 1] += tiny_min - fpos;
+        fpos = tiny_min;
+    }
     int image_end = sec_rva[nsec - 1] + pe_align(sec_vsize[nsec - 1] ? sec_vsize[nsec - 1] : 1, SA);
     u8 *file = cc_alloc((size_t)fpos);
     for (int i = 0; i < nsec; i++)
-        for (int k = 0; k < sec_raw[i] && k < sec_vsize[i]; k++)
+        for (int k = 0; k < sec_raw[i] && k < sec_vsize[i] && k < sec_len[i]; k++)
             file[sec_ptr[i] + k] = bytes[i][k];
 
     put_dos_stub(file);

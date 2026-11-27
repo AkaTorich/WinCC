@@ -1,8 +1,9 @@
 ﻿# Tests of WinCC: every tests\*.c becomes a real .exe (wcc.exe), runs, and its main
 # returns the number of failed checks: 0 = ok. A first line "// with: b.part c.part"
 # adds more sources of the same program. The .exe files go to tests\out.
-#   powershell -File tests\run.ps1 [имя-теста]
-param([string]$Only = "")
+#   powershell -File tests\run.ps1 [имя-теста] [-Flags "--tiny"]
+# -Flags: extra wcc switches for every test (the IDE builds with --tiny)
+param([string]$Only = "", [string]$Flags = "")
 $ErrorActionPreference = "Continue"
 $here = $PSScriptRoot
 $wcc = Join-Path (Split-Path -Parent $here) "wcc.exe"
@@ -18,7 +19,8 @@ foreach ($t in Get-ChildItem $here -Filter *.c | Sort-Object Name) {
         foreach ($p in ($Matches[1].Trim() -split '\s+')) { $srcs += (Join-Path $here $p) }
     }
     $exe = Join-Path $out ($t.BaseName + ".exe")
-    $build = & $wcc @srcs -o $exe 2>&1
+    $extra = @($Flags -split '\s+' | Where-Object { $_ })
+    $build = & $wcc @srcs -o $exe @extra 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host ("{0,-24} НЕ СОБРАЛСЯ: {1}" -f $t.Name, ($build -join " "))
         $bad++; continue

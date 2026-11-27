@@ -271,6 +271,7 @@ extern int cc_debug_info, cc_no_regalloc;
 extern int cc_entry_args[4];        // parameters of main, wmain, WinMain, wWinMain; -1: none (codegen.c)
 // asm.c, wcc -g: the debug info of the last cc_assemble_win (the ".wdbg" text), or 0
 extern char *cc_win_debug_text;
+extern int cc_win_import_count;     // functions the last cc_assemble_win takes from DLLs
 
 typedef struct {
     u8 *code;

@@ -203,6 +203,22 @@ static int has_label(const char *text, const char *name)
 
 // The entry Windows calls: a few instructions that hand the program's own
 // entry to the library (start.c), which starts it.
+// the program's own entry when it takes no parameters (main(void), WinMain(void)...), or 0
+static const char *g_direct_entry;
+
+// The text without the entry stub (__wcc_start): the program's entry becomes the image's entry.
+static char *drop_entry_stub(const char *all)
+{
+    const char *at = 0, *end = 0;
+    for (const char *p = all; *p; p++)
+        if (cc_strneq(p, "\n.text\n.local __wcc_start\n", 26)) { at = p; break; }
+    if (!at) return 0;
+    for (const char *p = at; *p; p++)
+        if (cc_strneq(p, ".seh_endproc\n", 13)) { end = p + 13; break; }
+    if (!end) return 0;
+    return cc_join(cc_strndup(all, (int)(at - all)), "", end);
+}
+
 static const char *win_entry_stub(CcWinTarget *t, const char *text)
 {
     if (!t->exe) {
@@ -228,6 +244,7 @@ static const char *win_entry_stub(CcWinTarget *t, const char *text)
     if (kind < 0)
         cc_error_at(0, 0, "нет функции main (для окон — WinMain)");
     t->entry = "__wcc_start";
+    g_direct_entry = cc_entry_args[kind] <= 0 ? entries[kind] : 0;
     // the frame of a C function, with its unwind info: an exception is searched for through it.
     // An entry without parameters is called as it is and its code goes to ExitProcess (start.c,
     // __wcc_finish): nothing of the library comes in that the program does not call itself.
@@ -434,6 +451,24 @@ int cc_build_win(const CcSource *sources, int count, int first_lib, CcWinTarget 
             *out = small;
             *out_size = small_size;
             cc_win_debug_text = small_dbg;
+        }
+        // a program that takes nothing from any DLL: its entry is the image's entry, and the entry's
+        // ret ends the process (the only thread) -- no ExitProcess, no import table at all
+        char *direct = ok && g_direct_entry ? drop_entry_stub(all) : 0;
+        if (direct) {
+            direct = cc_strip_unused(direct);
+            const char *stub_entry = t->entry;
+            char *chosen_dbg = cc_win_debug_text;
+            t->entry = g_direct_entry;
+            u8 *d;
+            u64 d_size;
+            if (cc_assemble_win(direct, t, &d, &d_size) && cc_win_import_count == 0 && d_size < *out_size) {
+                *out = d;
+                *out_size = d_size;
+            } else {
+                t->entry = stub_entry;
+                cc_win_debug_text = chosen_dbg;
+            }
         }
         return ok;
     }
