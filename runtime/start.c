@@ -33,12 +33,9 @@ void rt_signal_call(int sig);
 void (*__wcc_at_end)(void);
 void (*__wcc_flush_all)(void);
 
-// The process ends with the program's code; what the program started is finished first.
-void __wcc_finish(int code)
-{
-    if (__wcc_at_end) __wcc_at_end();       // exit() from an atexit function comes back here: the rest goes on
-    ExitProcess((unsigned)code);
-}
+// The process ends with the program's code; what the program started is finished first
+// (__wcc_at_end, then ExitProcess). It is in rtasm.asm: the one function every program has, kept short.
+void __wcc_finish(int code);
 
 static int g_argc;
 static char **g_argv;

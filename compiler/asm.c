@@ -3200,17 +3200,22 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     // section, 1 KB in the file.
     // wcc --tiny: sections and the file by 16 bytes, not by 4096 and 512 (link /ALIGN:16 /FILEALIGN:16).
     // Windows then maps the file as one piece: a section's place in memory is its place in the file.
+    // tiny goes further: the PE headers right after the 64-byte DOS stub, only the data directories
+    // up to the base relocations (the TLS one when there is TLS), no IAT directory, no second import
+    // list (ILT), and one section for everything: Windows maps such a file as one writable piece anyway.
     const int SA = t->tiny ? 16 : PE_SECT_ALIGN;
     const int FA = t->tiny ? 16 : WIN_FILE_ALIGN;
-    // the headers with room for all five sections; tiny: the code right after them
-    int hdr_room = 0x80 + 4 + (int)sizeof(PeFileHeader) + (int)sizeof(PeOpt64) + 5 * (int)sizeof(PeSection);
+    int nt_at = t->tiny ? 0x40 : 0x80;
+    int ndirs = t->tiny ? (tls_size ? 10 : 6) : 16;
+    int opt_size = (int)sizeof(PeOpt64) - (16 - ndirs) * 8;
+    int hdr_room = nt_at + 4 + (int)sizeof(PeFileHeader) + opt_size + (t->tiny ? 1 : 5) * (int)sizeof(PeSection);
     int text_rva = t->tiny ? pe_align(hdr_room, SA) : SA;
     int tab_rva = text_rva + pe_align(text_size, 16);
 
     // the tables, right after the code (offsets from tab_rva)
     int o = 0;
     int iat_off = o;     o += nslot * 8;
-    int ilt_off = o;     o += nslot * 8;
+    int ilt_off = o;     if (!t->tiny) o += nslot * 8;      // tiny: no ILT, Windows reads the names from the IAT
     o = pe_align(o, 4);
     int impdesc_off = o; o += (ndll + 1) * (int)sizeof(PeImportDesc);
     int *name_off = cc_alloc(sizeof(int) * (size_t)(n_imp + 1));
@@ -3382,14 +3387,15 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     for (int i = 0; i < norder; i++) {
         u64 name_rva = (u64)(tab_rva + name_off[i]);
         wr64(buf + tab_rva + iat_off + order[i]->slot * 8, name_rva);
-        wr64(buf + tab_rva + ilt_off + order[i]->slot * 8, name_rva);
+        if (!t->tiny)
+            wr64(buf + tab_rva + ilt_off + order[i]->slot * 8, name_rva);
         wr16(buf + tab_rva + name_off[i], 0);
         for (int k = 0; k < order[i]->len; k++)
             buf[tab_rva + name_off[i] + 2 + k] = (u8)order[i]->name[k];
     }
     for (int d = 0; d < ndll; d++) {
         PeImportDesc *desc = (PeImportDesc *)(buf + tab_rva + impdesc_off) + d;
-        desc->OriginalFirstThunk = (u32)(tab_rva + ilt_off + dll_first[d] * 8);
+        desc->OriginalFirstThunk = t->tiny ? 0 : (u32)(tab_rva + ilt_off + dll_first[d] * 8);
         desc->Name = (u32)(tab_rva + dllname_off[d]);
         desc->FirstThunk = (u32)(tab_rva + iat_off + dll_first[d] * 8);
         for (int k = 0; dlls[d][k]; k++)
@@ -3474,7 +3480,22 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     const u8 *bytes[5];
     int sec_rva[5], sec_vsize[5], sec_raw[5], sec_ptr[5], sec_bss[5], sec_len[5];
     int nsec = 0;
-    for (int i = 0; i < 5; i++)
+    if (t->tiny) {
+        // one section from the code to the last byte: tables, data, .tls, .bss as zeros, relocations
+        int end = reloc_size ? reloc_rva + reloc_size : bss_size ? bss_rva + bss_size
+                : tls_size ? tls_rva + tls_size : data_raw ? data_rva + data_raw : text_rva + text_vsize;
+        u8 *all = cc_alloc((size_t)(end - text_rva));
+        for (int k = text_rva; k < end && k < capacity; k++) all[k - text_rva] = buf[k];
+        for (int k = 0; k < reloc_size; k++) all[reloc_rva - text_rva + k] = relocs[k];
+        names[0] = ".text";
+        flags[0] = PE_SCN_CODE | PE_SCN_INIT_DATA | PE_SCN_EXECUTE | PE_SCN_READ | PE_SCN_WRITE;
+        sec_rva[0] = text_rva;
+        sec_len[0] = sec_vsize[0] = end - text_rva;
+        sec_bss[0] = 0;
+        bytes[0] = all;
+        nsec = 1;
+    }
+    for (int i = 0; i < 5 && !t->tiny; i++)
         if (i == 0 || all_size[i]) {
             names[nsec] = all_names[i];
             flags[nsec] = all_flags[i];
@@ -3515,12 +3536,13 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
             file[sec_ptr[i] + k] = bytes[i][k];
 
     put_dos_stub(file);
-    u8 *nt = file + 0x80;
+    ((PeDos *)file)->e_lfanew = nt_at;
+    u8 *nt = file + nt_at;
     wr32(nt, PE_NT_MAGIC);
     PeFileHeader *fh = (PeFileHeader *)(nt + 4);
     fh->Machine = PE_MACHINE_X64;
     fh->NumberOfSections = (unsigned short)nsec;
-    fh->SizeOfOptionalHeader = (unsigned short)sizeof(PeOpt64);
+    fh->SizeOfOptionalHeader = (unsigned short)opt_size;
     fh->Characteristics = PE_F_EXECUTABLE | PE_F_LARGE_ADDR | (t->exe ? 0 : PE_F_DLL);
     PeOpt64 *op = (PeOpt64 *)(nt + 4 + sizeof(PeFileHeader));
     op->Magic = PE_MAGIC_PE32PLUS;
@@ -3548,7 +3570,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     op->SizeOfStackCommit = 0x1000;
     op->SizeOfHeapReserve = 0x100000;
     op->SizeOfHeapCommit = 0x1000;
-    op->NumberOfRvaAndSizes = 16;
+    op->NumberOfRvaAndSizes = (u32)ndirs;
     if (ne) {
         op->DataDirectory[PE_DIR_EXPORT].VirtualAddress = (u32)(tab_rva + expdir_off);
         op->DataDirectory[PE_DIR_EXPORT].Size = (u32)(own_off + cc_strlen(own) + 1 - expdir_off);
@@ -3556,8 +3578,10 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
     if (ndll) {
         op->DataDirectory[PE_DIR_IMPORT].VirtualAddress = (u32)(tab_rva + impdesc_off);
         op->DataDirectory[PE_DIR_IMPORT].Size = (u32)((ndll + 1) * sizeof(PeImportDesc));
-        op->DataDirectory[PE_DIR_IAT].VirtualAddress = (u32)(tab_rva + iat_off);
-        op->DataDirectory[PE_DIR_IAT].Size = (u32)(nslot * 8);
+        if (ndirs > PE_DIR_IAT) {
+            op->DataDirectory[PE_DIR_IAT].VirtualAddress = (u32)(tab_rva + iat_off);
+            op->DataDirectory[PE_DIR_IAT].Size = (u32)(nslot * 8);
+        }
     }
     if (reloc_size) {
         op->DataDirectory[PE_DIR_BASERELOC].VirtualAddress = (u32)reloc_rva;
@@ -3576,7 +3600,7 @@ int cc_assemble_win(const char *text, const CcWinTarget *t, u8 **out, u64 *out_s
         op->DataDirectory[9].Size = 40;
     }
 
-    PeSection *sec = (PeSection *)((u8 *)op + sizeof(PeOpt64));
+    PeSection *sec = (PeSection *)((u8 *)op + opt_size);
     for (int i = 0; i < nsec; i++) {
         for (int k = 0; names[i][k]; k++) sec[i].Name[k] = (u8)names[i][k];
         sec[i].VirtualSize = (u32)(sec_vsize[i] ? sec_vsize[i] : 1);

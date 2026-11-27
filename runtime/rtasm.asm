@@ -2,6 +2,23 @@
 ; The Microsoft x64 callee-saved state: rbx rbp rdi rsi r12-r15 rsp rip xmm6-15.
 ; .gc: each comes into a program only if the program reaches it (strip.c)
 
+; void __wcc_finish(int code): the end of every program (start.c). What the program started --
+; atexit functions, output and files written out -- the library put in __wcc_at_end; then ExitProcess.
+; An atexit function that calls exit() comes back here, and the rest goes on.
+.gc
+__wcc_finish:
+    push rbx                        ; rsp 16-aligned for the calls
+    sub rsp, 32
+    mov ebx, ecx
+    mov rax, qword ptr [rip+@__wcc_at_end]
+    test rax, rax
+    jz .Lrt.fin.exit
+    call rax
+.Lrt.fin.exit:
+    mov ecx, ebx
+    call @ExitProcess
+    int3
+
 ; u32 cc_thread_id(void): the id of this thread, from its block (TEB.ClientId.UniqueThread)
 .gc
 .local cc_thread_id
