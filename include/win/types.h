@@ -152,6 +152,12 @@ typedef union _ULARGE_INTEGER {
     ULONGLONG QuadPart;
 } ULARGE_INTEGER, *PULARGE_INTEGER;
 typedef struct _GUID { unsigned long Data1; unsigned short Data2, Data3; unsigned char Data4[8]; } GUID, IID, CLSID;
+typedef char CCHAR;
+
+// a doubly linked list as Windows keeps them (the loader's modules, ntdll.h)
+typedef struct _LIST_ENTRY {
+    struct _LIST_ENTRY *Flink, *Blink;
+} LIST_ENTRY, *PLIST_ENTRY;
 
 typedef struct _SECURITY_ATTRIBUTES {
     DWORD nLength;

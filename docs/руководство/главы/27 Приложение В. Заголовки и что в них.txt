@@ -118,7 +118,7 @@
 
 := Файл | DLL | Функций | Что в нём
 : `win\types.h` | — | — | типы (`DWORD`, `HANDLE`, `HWND`, `LPSTR`…), `RECT`, `POINT`, `SYSTEMTIME`, `GUID`, макросы, коды ошибок
-: `win\kernel32.h` | kernel32, библиотека WinCC | 224 | процессы, потоки, файлы, память, время, кодировки, консоль, DLL, папки Windows и System32; атомарные `Interlocked…` — из библиотеки WinCC
+: `win\kernel32.h` | kernel32, библиотека WinCC | 226 | процессы, потоки, файлы, память, время, кодировки, консоль, DLL, папки Windows и System32; права доступа к файлам, потокам, событиям, мьютексам, семафорам и разделам памяти; атомарные `Interlocked…` — из библиотеки WinCC
 : `win\user32.h` | user32 | 254 | окна, сообщения, элементы, меню, мышь, клавиатура, таймеры, буфер обмена
 : `win\gdi32.h` | gdi32, user32 | 105 | рисование GDI, текст, картинки, области; 11 из них — переходники WinCC
 : `win\comdlg32.h` | comdlg32 | 9 | диалоги «Открыть», «Сохранить», выбор цвета и шрифта
@@ -126,7 +126,7 @@
 : `win\advapi32.h` | advapi32 | 21 | реестр, имя пользователя
 : `win\except.h` | kernel32 | 13 | исключения: коды, `EXCEPTION_RECORD`, `CONTEXT`, `EXCEPTION_POINTERS`, `RaiseException`, обработчики всей программы
 : `win\image.h` | — | — | заголовки файла .exe и .dll: `IMAGE_DOS_HEADER`, `IMAGE_NT_HEADERS64`, `IMAGE_SECTION_HEADER`, `IMAGE_EXPORT_DIRECTORY`, `IMAGE_FIRST_SECTION`, номера каталогов `IMAGE_DIRECTORY_ENTRY_…`
-: всего | | 657 |
+: всего | | 659 |
 
 Строк `#define` в этих файлах 1475 — константы и макросы, из них 851 — в `user32.h`: сообщения `WM_`, стили `WS_` и `ES_`, коды клавиш `VK_`, флаги `MB_`, `SW_`, `MF_`.
 
@@ -179,7 +179,7 @@ A-функции берут UTF-8, когда в программе есть м�
 : файлы | CreateFileA/W, ReadFile, WriteFile, CloseHandle, DuplicateHandle, GetFileSize, GetFileSizeEx, SetFilePointer, SetFilePointerEx, SetEndOfFile, FlushFileBuffers, GetFileTime, SetFileTime, DeleteFileA/W, CopyFileA/W, MoveFileA/W, MoveFileExA/W, GetFileAttributesA/W, SetFileAttributesA/W, GetTempFileNameA/W, GetFullPathNameA/W
 : папки и диски | CreateDirectoryA/W, RemoveDirectoryA/W, FindFirstFileA/W, FindNextFileA/W, FindClose, GetCurrentDirectoryA/W, SetCurrentDirectoryA/W, GetTempPathA/W, GetLogicalDrives, GetLogicalDriveStringsA/W, GetDriveTypeA/W, GetDiskFreeSpaceExA/W
 : каналы | CreatePipe, PeekNamedPipe
-: память | VirtualAlloc, VirtualFree, VirtualProtect, GetProcessHeap, HeapAlloc, HeapReAlloc, HeapFree, HeapSize, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GlobalSize, LocalAlloc, LocalFree
+: память | VirtualAlloc, VirtualFree, VirtualProtect, VirtualQuery, VirtualQueryEx, GetProcessHeap, HeapAlloc, HeapReAlloc, HeapFree, HeapSize, GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GlobalSize, LocalAlloc, LocalFree
 : строки и кодировки | GetACP, GetOEMCP, MultiByteToWideChar, WideCharToMultiByte, lstrlenA/W, lstrcpyA/W, lstrcpynA/W, lstrcatA/W, lstrcmpA/W, lstrcmpiA/W, FormatMessageA/W, OutputDebugStringA/W
 : окружение | GetComputerNameA/W, GetEnvironmentVariableA/W, SetEnvironmentVariableA/W, ExpandEnvironmentStringsA/W
 : процессы | CreateProcessA/W, OpenProcess, GetExitCodeProcess, WinExec
@@ -243,7 +243,7 @@ A-функции берут UTF-8, когда в программе есть м�
 := Что | Имена
 : ответ фильтра `__except (…)` | `EXCEPTION_EXECUTE_HANDLER` (1), `EXCEPTION_CONTINUE_SEARCH` (0), `EXCEPTION_CONTINUE_EXECUTION` (-1)
 : коды исключений | `EXCEPTION_ACCESS_VIOLATION` (`C0000005`), `EXCEPTION_INT_DIVIDE_BY_ZERO` (`C0000094`), `EXCEPTION_INT_OVERFLOW`, `EXCEPTION_STACK_OVERFLOW` (`C00000FD`), `EXCEPTION_ILLEGAL_INSTRUCTION`, `EXCEPTION_PRIV_INSTRUCTION`, `EXCEPTION_BREAKPOINT`, `EXCEPTION_SINGLE_STEP`, `EXCEPTION_ARRAY_BOUNDS_EXCEEDED`, `EXCEPTION_DATATYPE_MISALIGNMENT`, `EXCEPTION_IN_PAGE_ERROR`, `EXCEPTION_GUARD_PAGE`, `EXCEPTION_INVALID_HANDLE`, `EXCEPTION_NONCONTINUABLE_EXCEPTION`, `EXCEPTION_INVALID_DISPOSITION`, `EXCEPTION_FLT_…` (семь кодов чисел с точкой); `STATUS_ACCESS_VIOLATION`, `STATUS_STACK_OVERFLOW`, `STATUS_INTEGER_DIVIDE_BY_ZERO`
-: структуры | `EXCEPTION_RECORD` (код, флаги, адрес, параметры), `CONTEXT` (регистры процессора x64), `EXCEPTION_POINTERS` (запись и регистры вместе), `M128A`, `XSAVE_FORMAT`; флаги `CONTEXT_CONTROL`, `CONTEXT_INTEGER`, `CONTEXT_FULL`, `CONTEXT_ALL` и другие
+: структуры | `EXCEPTION_RECORD` (код, флаги, адрес, параметры), `CONTEXT` (регистры процессора x64), `EXCEPTION_POINTERS` (запись и регистры вместе), `M128A`, `XSAVE_FORMAT`, `NT_TIB` (начало блока потока: цепочка исключений, границы стека); флаги `CONTEXT_CONTROL`, `CONTEXT_INTEGER`, `CONTEXT_FULL`, `CONTEXT_ALL` и другие
 : функции | RaiseException, SetUnhandledExceptionFilter, UnhandledExceptionFilter, AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, AddVectoredContinueHandler, RemoveVectoredContinueHandler, RtlCaptureContext, GetThreadContext, SetThreadContext, IsDebuggerPresent, DebugBreak, RtlCaptureStackBackTrace
 : слова компилятора | `GetExceptionCode()` — в условии и в блоке `__except`; `GetExceptionInformation()` (указатель `EXCEPTION_POINTERS *`) — только в условии; `AbnormalTermination()` — только в блоке `__finally`
 
@@ -262,6 +262,7 @@ A-функции берут UTF-8, когда в программе есть м�
 : `commctrl.h` | элементы Common Controls: классы, стили, сообщения | 2 | comctl32
 : `mmsystem.h` | звук и точный таймер | 7 | winmm
 : `gdiplus.h` | GDI+ для Си: плоские функции `gdiplus.dll` | 183 | gdiplus
+: `ntdll.h` | родной слой Windows под kernel32: функции `Nt…`, `Rtl…`, `Ldr…` и их структуры | 107 | ntdll
 
 ### windowsx.h
 
@@ -332,6 +333,62 @@ A-функции берут UTF-8, когда в программе есть м�
 : точки | GdipBitmapGetPixel, GdipBitmapSetPixel, GdipBitmapLockBits, GdipBitmapUnlockBits
 : цвет картинок | GdipCreateImageAttributes, GdipDisposeImageAttributes, GdipSetImageAttributesColorMatrix
 
+### ntdll.h
+
+Под kernel32 в Windows лежит `ntdll.dll`: `CreateFile` зовёт `NtCreateFile`, `ReadProcessMemory` — `NtReadVirtualMemory`, `VirtualAlloc` — `NtAllocateVirtualMemory`. `ntdll.h` открывает этот слой. Он сам подключает `windows.h` и берёт функции из `ntdll.dll` — ни ключа `-l`, ни `#pragma` не нужно.
+
+Функции возвращают `NTSTATUS`: ноль и другие неотрицательные числа — удача, отрицательные (коды `0xC…`) — ошибка. Проверяет это макрос `NT_SUCCESS`, а в код ошибки Windows для `FormatMessage` переводит `RtlNtStatusToDosError`. Строки — `UNICODE_STRING`: длина в байтах, а не в символах, ноль в конце не обязателен; делает её из обычной строки `RtlInitUnicodeString`. Пути к файлам — в виде NT: `\??\C:\папка\файл`; из обычного пути такой делает `RtlDosPathNameToNtPathName_U`. Ключи реестра — `\Registry\Machine\…` и `\Registry\User\…`.
+
+```c
+#include <ntdll.h>
+#include <stdio.h>
+
+int main(void)
+{
+    UNICODE_STRING name;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK io;
+    HANDLE h;
+    RtlInitUnicodeString(&name, L"\\??\\C:\\Windows\\win.ini");
+    InitializeObjectAttributes(&oa, &name, OBJ_CASE_INSENSITIVE, 0, 0);
+    NTSTATUS st = NtOpenFile(&h, FILE_GENERIC_READ, &oa, &io, FILE_SHARE_READ,
+                             FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE);
+    if (!NT_SUCCESS(st)) {
+        printf("ошибка %08lX\n", (unsigned long)st);
+        return 1;
+    }
+    FILE_STANDARD_INFORMATION fsi;
+    NtQueryInformationFile(h, &io, &fsi, sizeof(fsi), FileStandardInformation);
+    printf("win.ini: %lld байт\n", fsi.EndOfFile.QuadPart);
+    NtClose(h);
+    return 0;
+}
+```
+
+:= Тема | Функции
+: объекты и ожидание | NtClose, NtDuplicateObject, NtQueryObject, NtWaitForSingleObject, NtWaitForMultipleObjects, NtSignalAndWaitForSingleObject
+: события, мьютексы, семафоры | NtCreateEvent, NtOpenEvent, NtSetEvent, NtResetEvent, NtClearEvent, NtPulseEvent, NtCreateMutant, NtReleaseMutant, NtCreateSemaphore, NtReleaseSemaphore
+: система и время | NtQuerySystemInformation, NtQuerySystemTime, NtQueryPerformanceCounter, NtQueryTimerResolution, NtSetTimerResolution, NtDelayExecution, NtYieldExecution
+: процессы | NtOpenProcess, NtTerminateProcess, NtSuspendProcess, NtResumeProcess, NtQueryInformationProcess, NtSetInformationProcess, NtOpenProcessToken
+: потоки | NtCreateThreadEx, NtOpenThread, NtTerminateThread, NtSuspendThread, NtResumeThread, NtAlertThread, NtTestAlert, NtQueueApcThread, NtGetContextThread, NtSetContextThread, NtQueryInformationThread, NtSetInformationThread
+: память | NtAllocateVirtualMemory, NtFreeVirtualMemory, NtProtectVirtualMemory, NtQueryVirtualMemory, NtReadVirtualMemory, NtWriteVirtualMemory, NtFlushInstructionCache, NtCreateSection, NtMapViewOfSection, NtUnmapViewOfSection
+: файлы | NtCreateFile, NtOpenFile, NtReadFile, NtWriteFile, NtFlushBuffersFile, NtCancelIoFile, NtQueryInformationFile, NtSetInformationFile, NtQueryDirectoryFile, NtQueryAttributesFile, NtQueryFullAttributesFile, NtQueryVolumeInformationFile, NtDeleteFile, NtDeviceIoControlFile, NtFsControlFile
+: реестр | NtCreateKey, NtOpenKey, NtDeleteKey, NtFlushKey, NtQueryKey, NtEnumerateKey, NtQueryValueKey, NtEnumerateValueKey, NtSetValueKey, NtDeleteValueKey
+: строки | RtlInitUnicodeString, RtlInitAnsiString, RtlFreeUnicodeString, RtlFreeAnsiString, RtlAnsiStringToUnicodeString, RtlUnicodeStringToAnsiString, RtlUTF8ToUnicodeN, RtlUnicodeToUTF8N, RtlCompareUnicodeString, RtlEqualUnicodeString, RtlDosPathNameToNtPathName_U
+: ошибки, версия, процесс | RtlNtStatusToDosError, RtlGetLastNtStatus, RtlGetVersion, RtlGetNtVersionNumbers, RtlGetCurrentPeb, RtlAdjustPrivilege, RtlExitUserProcess
+: кучи и числа | RtlCreateHeap, RtlDestroyHeap, RtlAllocateHeap, RtlFreeHeap, RtlRandomEx, RtlComputeCrc32
+: загрузчик | LdrLoadDll, LdrUnloadDll, LdrGetDllHandle, LdrGetProcedureAddress
+: отладчик | DbgPrint, DbgBreakPoint
+
+:= Что ещё | Имена
+: строки, объекты, ввод-вывод | `UNICODE_STRING`, `ANSI_STRING`, `RTL_CONSTANT_STRING`, `OBJECT_ATTRIBUTES` и `InitializeObjectAttributes`, флаги `OBJ_…`, `IO_STATUS_BLOCK`, `CLIENT_ID`, `NtCurrentProcess()`, `NtCurrentThread()`
+: блоки процесса и потока | `PEB` и `NtCurrentPeb()`, `TEB` (начало, `NtCurrentTeb()` из `intrin.h`), `PEB_LDR_DATA` и `LDR_DATA_TABLE_ENTRY` — загруженные модули, `RTL_USER_PROCESS_PARAMETERS` — командная строка, путь, папка, окружение, стандартные ввод и вывод
+: что спрашивать | `SYSTEM_INFORMATION_CLASS`, `PROCESSINFOCLASS`, `THREADINFOCLASS`, `OBJECT_INFORMATION_CLASS`, `FILE_INFORMATION_CLASS`, `FS_INFORMATION_CLASS`, `KEY_INFORMATION_CLASS`, `KEY_VALUE_INFORMATION_CLASS` и ответы на них: `SYSTEM_PROCESS_INFORMATION` (все процессы с потоками), `SYSTEM_BASIC_INFORMATION`, `PROCESS_BASIC_INFORMATION`, `THREAD_BASIC_INFORMATION`, `FILE_DIRECTORY_INFORMATION`, `FILE_STANDARD_INFORMATION`, `KEY_VALUE_PARTIAL_INFORMATION` и другие
+: файлы | что делать с файлом `FILE_OPEN`, `FILE_CREATE`, `FILE_OVERWRITE_IF`…, флаги `FILE_SYNCHRONOUS_IO_NONALERT`, `FILE_DIRECTORY_FILE`, `FILE_NON_DIRECTORY_FILE`, `FILE_DELETE_ON_CLOSE`…, что сделано `FILE_CREATED`, `FILE_OPENED`…
+: коды | `NTSTATUS`, `NT_SUCCESS`, `NT_ERROR`, 54 кода `STATUS_…` от `STATUS_SUCCESS` до `STATUS_STACK_BUFFER_OVERRUN`; номера привилегий `SE_…_PRIVILEGE` для `RtlAdjustPrivilege`
+
+Microsoft описывает лишь часть этих структур. Остальные (`PEB`, `TEB`, `LDR_DATA_TABLE_ENTRY`…) даны до тех полей, что стоят на своих местах во всех Windows 10 и 11; за ними в настоящей структуре есть ещё поля. Ожидание и задержка считаются в сотнях наносекунд: число меньше нуля — сколько ждать (`-10000` — одна миллисекунда), больше нуля — до какого момента.
+
 ## Сеть, шифры, WUI и Elements
 
 Подробно об этих заголовках — в частях IV, V и VI.
@@ -358,6 +415,7 @@ A-функции берут UTF-8, когда в программе есть м�
 
 := Заголовок | Чем заменить
 : `unistd.h` | имена POSIX из `io.h` (`open`, `read`, `write`, `close`, `access`, `unlink`), `direct.h` (`chdir`, `getcwd`, `rmdir`) и `process.h` (`getpid`)
-: `shlwapi.h`, `dwmapi.h`, `winternl.h`, `psapi.h`, `tlhelp32.h` и другие заголовки Windows | своё объявление нужных функций и `#pragma comment(lib, "имя")` — глава 11
+: `winternl.h`, `ntstatus.h` | `ntdll.h`: в нём то же и больше
+: `shlwapi.h`, `dwmapi.h`, `psapi.h`, `tlhelp32.h` и другие заголовки Windows | своё объявление нужных функций и `#pragma comment(lib, "имя")` — глава 11
 : `objbase.h` и заголовки COM | функции `ole32` объявляются сами; интерфейсы COM описываются вручную
 : `xmmintrin.h`, `emmintrin.h`, `immintrin.h` и другие заголовки SSE и AVX с типом `__m128` | вставки на ассемблере: команды SSE и AVX ассемблер WinCC понимает (глава 8)

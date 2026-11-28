@@ -2,7 +2,8 @@
 # Windows SDK) and by wcc.exe, both print the same list, and the lists are compared line
 # by line. sizes.c: windows.h; net.c: winsock2.h, ws2tcpip.h, winhttp.h; consts.c is made
 # here from every number #define of the sockets and WinHTTP headers of WinCC; bits.c: how
-# bit fields are laid out (the bytes of each field).
+# bit fields are laid out (the bytes of each field); nt.c and ntconsts.c: ntdll.h against
+# winternl.h and ntstatus.h.
 #   powershell -File tests\winabi\abi.ps1
 $ErrorActionPreference = "Continue"
 $here = $PSScriptRoot
@@ -24,11 +25,28 @@ foreach ($h in "winsock2.h", "ws2tcpip.h", "winhttp.h") {
 $lines += "    return 0;", "}"
 [IO.File]::WriteAllLines((Join-Path $out "consts.c"), $lines)
 
+# ntconsts.c: the same for ntdll.h and what it needs from win\kernel32.h; the SE_ privileges and
+# THREAD_CREATE_FLAGS_ are not in the SDK (the SE_ ones are in the WDK's wdm.h: checked by hand)
+$lines = @("#ifdef __WINCC__", "#include <ntdll.h>", "#else", "#define WIN32_NO_STATUS", "#include <windows.h>",
+           "#undef WIN32_NO_STATUS", "#include <ntstatus.h>", "#include <winternl.h>", "#endif", "#include <stdio.h>",
+           "#define P(n) printf(""%-56s %lld\n"", #n, (long long)(n))", "int main(void)", "{")
+foreach ($h in "ntdll.h", "win\kernel32.h") {
+    foreach ($l in Get-Content (Join-Path $root "include\$h") -Encoding UTF8) {
+        if ($l -cnotmatch '^#define ([A-Z_][A-Z0-9_]*)[ \t]+(.+)$') { continue }
+        if ($Matches[1] -cmatch '^(SE_|THREAD_CREATE_FLAGS_|NTAPI)' -or $Matches[2] -cmatch '"|memset|memcpy|memmove|memcmp|__readgsqword|HANDLE|^Nt|^\{|__AW') { continue }
+        $lines += "    P($($Matches[1]));"
+    }
+}
+$lines += "    return 0;", "}"
+[IO.File]::WriteAllLines((Join-Path $out "ntconsts.c"), $lines)
+
 $progs = @(
     @{ src = (Join-Path $here "sizes.c"); libs = "user32.lib" },
     @{ src = (Join-Path $here "net.c"); libs = "ws2_32.lib winhttp.lib" },
     @{ src = (Join-Path $out "consts.c"); libs = "ws2_32.lib winhttp.lib" },
-    @{ src = (Join-Path $here "bits.c"); libs = "" }
+    @{ src = (Join-Path $here "bits.c"); libs = "" },
+    @{ src = (Join-Path $here "nt.c"); libs = "" },
+    @{ src = (Join-Path $out "ntconsts.c"); libs = "" }
 )
 $bad = 0; $count = 0
 foreach ($p in $progs) {

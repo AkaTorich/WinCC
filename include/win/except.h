@@ -107,6 +107,17 @@ typedef struct _CONTEXT {
 #define CONTEXT_FULL        (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
 #define CONTEXT_ALL         (CONTEXT_FULL | CONTEXT_SEGMENTS | CONTEXT_AMD64 | 0x10L)
 
+// the start of a thread's block (TEB): the exception chain, the bounds of the stack, itself at Self
+typedef struct _NT_TIB {
+    struct _EXCEPTION_REGISTRATION_RECORD *ExceptionList;
+    PVOID StackBase;
+    PVOID StackLimit;
+    PVOID SubSystemTib;
+    union { PVOID FiberData; DWORD Version; };
+    PVOID ArbitraryUserPointer;
+    struct _NT_TIB *Self;
+} NT_TIB, *PNT_TIB;
+
 typedef struct _EXCEPTION_POINTERS {
     PEXCEPTION_RECORD ExceptionRecord;
     PCONTEXT ContextRecord;
